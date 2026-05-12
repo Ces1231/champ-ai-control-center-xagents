@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CHAMP AI Control Center — X-Agent Edition</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --heading: #e6edf3;
+    --accent: #58a6ff;
+    --accent2: #f78166;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --purple: #bc8cff;
+    --code-bg: #1f2937;
+    --tag-bg: #1f2d3d;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 40%, #1a1f2e 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 56px 40px 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(88,166,255,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: var(--heading);
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero .subtitle {
+    color: var(--muted);
+    font-size: 1rem;
+    max-width: 680px;
+    margin: 0 auto 24px;
+  }
+  .badge {
+    display: inline-block;
+    background: var(--tag-bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.78rem;
+    color: var(--accent);
+    margin: 4px;
+    letter-spacing: 0.3px;
+  }
+
+  /* ── Layout ── */
+  .container { max-width: 960px; margin: 0 auto; padding: 40px 32px 80px; }
+
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--heading);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    margin: 48px 0 24px;
+  }
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--heading);
+    margin: 32px 0 12px;
+  }
+  h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin: 28px 0 12px;
+  }
+  p { margin-bottom: 12px; color: var(--text); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 6px;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    color: #e6a817;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #a5d6ff;
+    font-size: 0.9rem;
+  }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  strong { color: var(--heading); }
+
+  /* ── Agent cards ── */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .agent-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.15s;
+  }
+  .agent-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .agent-card .name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--heading);
+    margin-bottom: 6px;
+  }
+  .agent-card .name { color: var(--heading); }
+  .agent-card .meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .tag-model {
+    background: #1a2332;
+    border: 1px solid #2d4a6e;
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 0.78rem;
+    font-family: monospace;
+    color: #79c0ff;
+  }
+  .tag-fn {
+    background: #1e2a1e;
+    border: 1px solid #2d5a2d;
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 0.78rem;
+    color: var(--green);
+  }
+  .agent-card .desc { font-size: 0.88rem; color: var(--muted); line-height: 1.5; }
+
+  /* CEREBRO card — full width */
+  .agent-card.cerebro {
+    grid-column: 1 / -1;
+    border-color: #3d2b6e;
+    background: linear-gradient(135deg, #161b22, #1a1529);
+  }
+  .agent-card.cerebro .name { color: var(--purple); }
+  .agent-card.cerebro .tag-fn {
+    background: #2a1e3a;
+    border-color: #5a3a8e;
+    color: var(--purple);
+  }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.9rem;
+  }
+  th {
+    background: var(--surface);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    text-align: left;
+  }
+  td {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+
+  /* ── Menu option list ── */
+  .menu-table td:first-child {
+    font-family: monospace;
+    color: var(--accent);
+    font-weight: 700;
+    white-space: nowrap;
+    width: 60px;
+  }
+
+  /* ── Dev tools sections ── */
+  .devtools-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  .devtools-section h4 { margin-top: 0; }
+
+  /* ── Files table ── */
+  .files-table td:first-child { font-family: monospace; color: #e6a817; white-space: nowrap; }
+
+  /* ── Run block ── */
+  .run-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .run-box p { margin: 0 0 10px; font-weight: 600; color: var(--heading); }
+
+  /* ── Ordered list ── */
+  ol { padding-left: 24px; margin: 12px 0; }
+  ol li { margin-bottom: 6px; }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    padding: 32px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    border-top: 1px solid var(--border);
+    margin-top: 60px;
+  }
+  .footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>CHAMP AI <span>Control Center</span></h1>
+  <p class="subtitle">X-Agent Edition — Windows PowerShell local AI development stack with X-Men-inspired agent roles, voice responses, Wolverine recovery, and a full AI Dev Tools suite.</p>
+  <span class="badge">Ollama</span>
+  <span class="badge">Open WebUI</span>
+  <span class="badge">Docker</span>
+  <span class="badge">PowerShell 7</span>
+  <span class="badge">NVIDIA GPU</span>
+  <span class="badge">Windows 10/11</span>
+</div>
+
+<div class="container">
+
+  <!-- Agents -->
+  <h2>Agents</h2>
+  <p>Each agent is named after an X-Men character whose Marvel abilities mirror their AI function.</p>
+
+  <div class="agent-grid">
+
+    <div class="agent-card">
+      <div class="name">Professor X</div>
+      <div class="meta">
+        <span class="tag-model">llama3.1:8b</span>
+        <span class="tag-fn">Strategy &amp; Planning</span>
+      </div>
+      <div class="desc">The team's leader and most powerful mind. Use for high-level reasoning, architecture decisions, project planning, and anything that needs careful thought before action.</div>
+    </div>
+
+    <div class="agent-card">
+      <div class="name">Forge</div>
+      <div class="meta">
+        <span class="tag-model">qwen2.5-coder:7b</span>
+        <span class="tag-fn">Coding &amp; Infrastructure</span>
+      </div>
+      <div class="desc">The X-Men's tech genius who can build or fix anything. Use for writing code, debugging, scripting in Python or PowerShell, Docker configuration, and all infrastructure tasks.</div>
+    </div>
+
+    <div class="agent-card">
+      <div class="name">Cyclops</div>
+      <div class="meta">
+        <span class="tag-model">mistral:7b</span>
+        <span class="tag-fn">Cybersecurity &amp; Analysis</span>
+      </div>
+      <div class="desc">Laser-focused, disciplined tactician. Use for security analysis, reviewing logs, triaging threats, IOC investigation, and any task that needs precision and methodical thinking.</div>
+    </div>
+
+    <div class="agent-card">
+      <div class="name">Nightcrawler</div>
+      <div class="meta">
+        <span class="tag-model">phi3:mini</span>
+        <span class="tag-fn">Fast Lightweight Queries</span>
+      </div>
+      <div class="desc">The fastest X-Man — teleports instantly. Use when you need a quick answer, a short explanation, a definition, or a summary without waiting for a heavier model to load.</div>
+    </div>
+
+    <div class="agent-card">
+      <div class="name">Wolverine</div>
+      <div class="meta">
+        <span class="tag-model">phi3:mini</span>
+        <span class="tag-fn">Recovery &amp; Resilience</span>
+      </div>
+      <div class="desc">Near-indestructible with a rapid healing factor. Monitors and heals the local AI stack — restarting Ollama, recovering Open WebUI, running health scans, and acting as the emergency watchdog.</div>
+    </div>
+
+    <div class="agent-card">
+      <div class="name">Magneto</div>
+      <div class="meta">
+        <span class="tag-model">codellama:7b</span>
+        <span class="tag-fn">Experimental Engineering</span>
+      </div>
+      <div class="desc">Powerful, unpredictable, bends the rules. Use for advanced code generation, experimental builds, low-level logic, and as the slot for dropping in larger or specialist models.</div>
+    </div>
+
+    <div class="agent-card cerebro">
+      <div class="name">CEREBRO</div>
+      <div class="meta">
+        <span class="tag-model">PowerShell system layer</span>
+        <span class="tag-fn">Orchestration &amp; Control</span>
+      </div>
+      <div class="desc">Professor X's machine that amplifies his reach to the entire world. CEREBRO is the control center itself — it runs the menus, speaks the voice responses, monitors system health, and connects every agent.</div>
+    </div>
+
+  </div>
+
+  <!-- Smart Router -->
+  <h3>Smart Agent Router</h3>
+  <p>Type any task in plain English and CEREBRO automatically picks the best agent by scoring keyword matches.</p>
+  <table>
+    <thead><tr><th>Agent</th><th>Trigger Keywords</th></tr></thead>
+    <tbody>
+      <tr><td>Professor X</td><td>plan, strategy, architect, design, roadmap, advise, recommend, think</td></tr>
+      <tr><td>Forge</td><td>code, debug, script, python, powershell, docker, build, deploy, bug, api, implement</td></tr>
+      <tr><td>Cyclops</td><td>security, threat, malware, ioc, vulnerability, audit, log, triage, scan, breach</td></tr>
+      <tr><td>Nightcrawler</td><td>quick, fast, explain, summarize, define, tldr, brief, simple</td></tr>
+      <tr><td>Wolverine</td><td>recover, restart, broken, crashed, health, watchdog, restore, failed</td></tr>
+      <tr><td>Magneto</td><td>experiment, advanced, optimize, benchmark, compile, performance, prototype</td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <!-- Run -->
+  <h2>Run</h2>
+  <div class="run-box">
+    <p>Launch from PowerShell 7:</p>
+    <pre><code>powershell -ExecutionPolicy Bypass -File .\champ-ai-control-center-xagents.ps1</code></pre>
+    <p style="margin:10px 0 0;color:var(--muted);font-size:0.88rem;">Or double-click <code>Launch-CHAMP-AI-Control-Center.bat</code></p>
+  </div>
+
+  <!-- Main Menu -->
+  <h2>Main Menu Options</h2>
+  <table class="menu-table">
+    <thead><tr><th>#</th><th>Option</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>CEREBRO System Status (RAM, disk, services, loaded models)</td></tr>
+      <tr><td>2</td><td>Start Ollama</td></tr>
+      <tr><td>2S</td><td>Stop Ollama</td></tr>
+      <tr><td>3</td><td>X-Agent Launcher</td></tr>
+      <tr><td>4</td><td>Show X-Agent Model Map</td></tr>
+      <tr><td>5</td><td>Pull / Update Single X-Agent Model</td></tr>
+      <tr><td>6</td><td>Pull All X-Agent Models</td></tr>
+      <tr><td>7</td><td>List Ollama Models</td></tr>
+      <tr><td>8</td><td>Start Open WebUI</td></tr>
+      <tr><td>9</td><td>Stop Open WebUI</td></tr>
+      <tr><td>10</td><td>Restart Open WebUI</td></tr>
+      <tr><td>11</td><td>Update Open WebUI Manually</td></tr>
+      <tr><td>12</td><td>Open Open WebUI Dashboard</td></tr>
+      <tr><td>13</td><td>Show Docker Containers</td></tr>
+      <tr><td>14</td><td>Open VS Code Project Folder</td></tr>
+      <tr><td>15</td><td>Wolverine Recovery Center</td></tr>
+      <tr><td>16</td><td>Toggle Voice Responses</td></tr>
+      <tr><td>17</td><td>Toggle Sound Alerts</td></tr>
+      <tr><td>18</td><td>View Activity Log</td></tr>
+      <tr><td>19</td><td><strong>AI Development Tools</strong></td></tr>
+      <tr><td>20</td><td><strong>DevOps Control Panel</strong></td></tr>
+      <tr><td>21</td><td>Exit</td></tr>
+    </tbody>
+  </table>
+
+  <!-- AI Dev Tools -->
+  <h2>AI Development Tools (option 19)</h2>
+
+  <div class="devtools-section">
+    <h4>Core Tools</h4>
+    <table>
+      <thead><tr><th>#</th><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>GPU / Hardware Monitor</td><td>CPU load, RAM %, disk per drive, NVIDIA VRAM and temp via <code>nvidia-smi</code></td></tr>
+        <tr><td>2</td><td>Modelfile Creator</td><td>Build a custom Ollama agent with a system prompt and temperature, then <code>ollama create</code> it</td></tr>
+        <tr><td>3</td><td>Model Benchmark</td><td>Time a response end-to-end, estimate tokens/sec, logged to activity log</td></tr>
+        <tr><td>4</td><td>Prompt Library</td><td>Save, browse, and fire reusable prompts at any agent (<code>CHAMP-prompts.json</code>)</td></tr>
+        <tr><td>5</td><td>Agent Chain Pipeline</td><td>Pipe Agent A's full response as context into Agent B</td></tr>
+        <tr><td>6</td><td>Multi-Model Comparison</td><td>Send the same prompt to 2–3 agents simultaneously, compare with timing summary, save to Markdown</td></tr>
+        <tr><td>7</td><td>Session Export</td><td>Run a prompt and save the full response to a timestamped <code>.md</code> or <code>.txt</code> file</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="devtools-section">
+    <h4>Environment</h4>
+    <table>
+      <thead><tr><th>#</th><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>8</td><td>Python AI Env Wizard</td><td>Create a venv and install bundle groups: torch/transformers, LangChain, LlamaIndex, Ollama SDK, data science, FastAPI, Jupyter</td></tr>
+        <tr><td>9</td><td>Jupyter Launcher</td><td>Start Jupyter Notebook (uses local venv if present), open browser to localhost:8888</td></tr>
+        <tr><td>10</td><td>Docker Compose Generator</td><td>Generate a <code>docker-compose.yml</code> for any combination of Ollama, Open WebUI, n8n, Flowise, LiteLLM, SearXNG, Qdrant, Redis</td></tr>
+        <tr><td>11</td><td>Windows Terminal Profile</td><td>Auto-install a CHAMP AI tab in Windows Terminal with correct launch command and color scheme</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="devtools-section">
+    <h4>Models &amp; APIs</h4>
+    <table>
+      <thead><tr><th>#</th><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>12</td><td>Ollama Model Search</td><td>Browse ollama.com/library by keyword, pull a model directly from results</td></tr>
+        <tr><td>13</td><td>Model Disk Manager</td><td>List all installed models with sizes, delete to free disk space</td></tr>
+        <tr><td>14</td><td>RAM / VRAM Advisor</td><td>Check compatibility of 13 common models against your free RAM/VRAM before pulling; heuristic estimate for custom model names</td></tr>
+        <tr><td>15</td><td>Ollama REST API Tester</td><td>Direct <code>Invoke-RestMethod</code> to localhost:11434 — list models, version, <code>/api/generate</code>, model info</td></tr>
+        <tr><td>16</td><td>AI Services Port Dashboard</td><td>Live port scan for Ollama, Open WebUI, Jupyter, FastAPI, Gradio, Streamlit, LiteLLM, AnythingLLM</td></tr>
+        <tr><td>17</td><td>API Key Manager</td><td>Read/write <code>.env</code> for OPENAI_API_KEY, HF_TOKEN, etc.; input via <code>-AsSecureString</code>, masked display</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="devtools-section">
+    <h4>Data &amp; Scheduling</h4>
+    <table>
+      <thead><tr><th>#</th><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>18</td><td>Backup &amp; Restore</td><td>Backs up <code>.env</code>, prompts, Modelfiles, activity log, and Open WebUI Docker volume to <code>CHAMP-Backups\</code>; full restore from any snapshot</td></tr>
+        <tr><td>19</td><td>Scheduled Agent Queries</td><td>Create Windows Task Scheduler jobs that run a prompt against any agent on a daily/hourly/logon schedule; output auto-saved to <code>CHAMP-Sessions\</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- DevOps Control Panel -->
+  <h2>DevOps Control Panel (option 20)</h2>
+  <p>A full DevOps integration layer inside CHAMP AI. Each tool gets its own submenu with raw CLI commands and AI-assisted operations powered by the X-Agent team. Settings are stored in <code>.devops-config.json</code>; secrets live in <code>.env</code>.</p>
+
+  <div class="devtools-section">
+    <h4>Proxmox VE</h4>
+    <table>
+      <thead><tr><th>#</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Dashboard — node status, CPU, RAM, storage</td></tr>
+        <tr><td>2</td><td>List VMs</td></tr>
+        <tr><td>3</td><td>Start / Stop / Reboot a VM</td></tr>
+        <tr><td>4</td><td>Snapshot Manager — list, create, rollback</td></tr>
+        <tr><td>5</td><td>AI Infrastructure Review (Professor X analyses your node health)</td></tr>
+        <tr><td>6</td><td>Configure Proxmox connection (host, token ID, secret)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="devtools-section">
+    <h4>GitHub</h4>
+    <table>
+      <thead><tr><th>#</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>List repos</td></tr>
+        <tr><td>2</td><td>Create issue (AI-assisted body via Professor X)</td></tr>
+        <tr><td>3</td><td>List open PRs</td></tr>
+        <tr><td>4</td><td>Create PR (AI-assisted description via Professor X)</td></tr>
+        <tr><td>5</td><td>AI code review of latest diff (Forge)</td></tr>
+        <tr><td>6</td><td>Trigger a GitHub Actions workflow</td></tr>
+        <tr><td>7</td><td>Configure GitHub (default repo)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="devtools-section">
+    <h4>Docker Enhanced</h4>
+    <table>
+      <thead><tr><th>#</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>List containers (all)</td></tr>
+        <tr><td>2</td><td>Start / Stop / Remove a container</td></tr>
+        <tr><td>3</td><td>View container logs + Cyclops AI analysis</td></tr>
+        <tr><td>4</td><td>Live container stats</td></tr>
+        <tr><td>5</td><td>AI Dockerfile generator (Forge)</td></tr>
+        <tr><td>6</td><td>Build an image from a Dockerfile</td></tr>
+        <tr><td>7</td><td>List volumes</td></tr>
+        <tr><td>8</td><td>List networks</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="devtools-section">
+    <h4>Terraform</h4>
+    <table>
+      <thead><tr><th>#</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><code>terraform init</code></td></tr>
+        <tr><td>2</td><td><code>terraform plan</code> — Professor X reviews before apply</td></tr>
+        <tr><td>3</td><td><code>terraform apply</code></td></tr>
+        <tr><td>4</td><td><code>terraform destroy</code> — requires typing DESTROY to confirm</td></tr>
+        <tr><td>5</td><td><code>terraform state list</code></td></tr>
+        <tr><td>6</td><td>List / switch workspaces</td></tr>
+        <tr><td>7</td><td>AI <code>.tf</code> file generator (Forge)</td></tr>
+        <tr><td>8</td><td>Configure working directory</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="devtools-section">
+    <h4>Packer</h4>
+    <table>
+      <thead><tr><th>#</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><code>packer validate</code></td></tr>
+        <tr><td>2</td><td><code>packer build</code></td></tr>
+        <tr><td>3</td><td>AI HCL template generator (Forge)</td></tr>
+        <tr><td>4</td><td>Cyclops security audit of a template</td></tr>
+        <tr><td>5</td><td>Configure template path</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="devtools-section">
+    <h4>Ansible</h4>
+    <table>
+      <thead><tr><th>#</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Run a playbook — Professor X reviews before execution</td></tr>
+        <tr><td>2</td><td>Ad-hoc command</td></tr>
+        <tr><td>3</td><td>List inventory</td></tr>
+        <tr><td>4</td><td><code>ansible-galaxy</code> install a role</td></tr>
+        <tr><td>5</td><td>AI playbook generator (Forge)</td></tr>
+        <tr><td>6</td><td>Cyclops security audit of a playbook</td></tr>
+        <tr><td>7</td><td>Configure inventory path</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:0.85em;color:#aaa;">Ansible runs natively if <code>ansible</code> is on PATH, or falls back to <code>wsl ansible</code> for WSL installations.</p>
+  </div>
+
+  <!-- First Run -->
+  <h2>Recommended First Run Order</h2>
+  <ol>
+    <li>CEREBRO System Status — verify RAM, Docker, Ollama</li>
+    <li>Start Ollama</li>
+    <li>Pull All X-Agent Models</li>
+    <li>Start Open WebUI</li>
+    <li>Open Open WebUI Dashboard</li>
+    <li>AI Dev Tools → Python AI Env Wizard (if using Python)</li>
+  </ol>
+
+  <!-- Files -->
+  <h2>Files Created at Runtime</h2>
+  <table class="files-table">
+    <thead><tr><th>File / Folder</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td>CHAMP-activity.log</td><td>Timestamped log of every agent activation, query, and event</td></tr>
+      <tr><td>CHAMP-prompts.json</td><td>Saved prompt library entries</td></tr>
+      <tr><td>.env</td><td>API keys (OPENAI_API_KEY, HF_TOKEN, etc.) — input masked, never shown</td></tr>
+      <tr><td>Modelfile-&lt;name&gt;</td><td>Custom agent Modelfiles built by the Modelfile Creator</td></tr>
+      <tr><td>champ-ai-env\</td><td>Python virtual environment created by the AI Env Wizard</td></tr>
+      <tr><td>CHAMP-Sessions\</td><td>Exported agent responses and model comparison Markdowns</td></tr>
+      <tr><td>CHAMP-Backups\</td><td>Timestamped backup snapshots (configs, prompts, Docker volume)</td></tr>
+      <tr><td>docker-compose.yml</td><td>Generated full-stack compose file from Docker Compose Generator</td></tr>
+      <tr><td>sched-CHAMP-&lt;name&gt;.ps1</td><td>Wrapper scripts for scheduled Task Scheduler queries</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Safe Update -->
+  <h2>Safe Update Design</h2>
+  <p>Open WebUI does not auto-update on launch. Use <strong>Update Open WebUI Manually</strong> (option 11) only when ready — it preserves the <code>open-webui</code> data volume.</p>
+
+</div>
+
+<div class="footer">
+  CHAMP AI Control Center — X-Agent Edition &nbsp;|&nbsp;
+  X-Men @ Marvel &nbsp;|&nbsp;
+  <a href="https://ollama.com" target="_blank">Ollama</a> &nbsp;|&nbsp;
+  <a href="https://github.com/open-webui/open-webui" target="_blank">Open WebUI</a>
+</div>
+
+</body>
+</html>
+

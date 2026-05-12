@@ -1,0 +1,3884 @@
+# ============================================================
+# CHAMP AI Control Center - X-Agent Edition
+# Local AI launcher for Windows: Ollama, Open WebUI, Docker, VS Code
+# Includes X-Men-inspired agent roles, voice responses, sound alerts,
+# safe Open WebUI updates, and Wolverine recovery functions.
+# ============================================================
+
+# -----------------------------
+# User Config
+# -----------------------------
+$OpenWebUIContainer = "champ-open-webui"
+$OpenWebUIPort = "3000"
+$OpenWebUIImage = "ghcr.io/open-webui/open-webui:main"
+$DefaultProjectPath = "$env:USERPROFILE\OneDrive\Documents\01_Projects"
+$ActivityLogPath = "$PSScriptRoot\CHAMP-activity.log"
+
+$EnableVoice = $true
+$EnableSounds = $true
+
+# -----------------------------
+# X-Agent Model Map
+# -----------------------------
+$Agents = @{
+    "Professor-X" = @{
+        Model    = "llama3.1:8b"
+        Role     = "Strategic reasoning, architecture, planning, and executive assistant"
+        Keywords = @("plan","strategy","architect","design","roadmap","decide","advise","recommend","think")
+    }
+    "Forge" = @{
+        Model    = "qwen2.5-coder:7b"
+        Role     = "Coding, debugging, scripting, Docker, PowerShell, Python, and infrastructure"
+        Keywords = @("code","debug","script","function","error","python","powershell","docker","build","deploy","fix","bug","implement","class","module","api")
+    }
+    "Cyclops" = @{
+        Model    = "mistral:7b"
+        Role     = "Cybersecurity analysis, IOC review, logs, triage, and focused operations"
+        Keywords = @("security","threat","malware","ioc","log","triage","attack","vulnerability","cve","firewall","incident","phishing","breach","scan","audit")
+    }
+    "Nightcrawler" = @{
+        Model    = "phi3:mini"
+        Role     = "Fast lightweight assistant for quick local responses"
+        Keywords = @("quick","fast","simple","brief","short","explain","what is","define","summarize","tldr")
+    }
+    "Wolverine" = @{
+        Model    = "phi3:mini"
+        Role     = "Recovery, resilience, service checks, watchdog actions, and emergency restart"
+        Keywords = @("recover","restart","down","broken","fix service","health","watchdog","restore","crashed","failed")
+    }
+    "Magneto" = @{
+        Model    = "codellama:7b"
+        Role     = "Experimental engineering, advanced build logic, and future larger-model slot"
+        Keywords = @("experiment","advanced","compile","assembly","low level","optimize","performance","benchmark","prototype")
+    }
+    "Scout" = @{
+        Model    = "llava:7b"
+        Role     = "Vision agent — describe images, convert screenshots to UI code, analyse diagrams"
+        Keywords = @("image","screenshot","photo","picture","vision","describe","look at","see","visual","diagram","ui from")
+    }
+}
+
+# -----------------------------
+# UI Generation globals
+# -----------------------------
+$Global:PreviewFile = "$PSScriptRoot\CHAMP-Sessions\ui-preview.html"
+$Global:PreviewPort = 9090
+$Global:LastGeneratedCode = ""
+$Global:LastGeneratedFramework = "html"
+
+try {
+    Add-Type -AssemblyName System.Speech -ErrorAction Stop
+    $Global:CHAMPSpeaker = New-Object System.Speech.Synthesis.SpeechSynthesizer
+    $Global:CHAMPSpeaker.Rate = 0
+    $Global:CHAMPSpeaker.Volume = 100
+} catch {
+    $EnableVoice = $false
+}
+
+# -----------------------------
+# Toast notification helper (Windows 10/11)
+# -----------------------------
+function Send-ToastNotification {
+    param([string]$Title, [string]$Message)
+    try {
+        Add-Type -AssemblyName Windows.UI -ErrorAction Stop
+        [Windows.UI.Notifications.ToastNotificationManager, Windows.UI, ContentType = WindowsRuntime] | Out-Null
+        $template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02
+        $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template)
+        $nodes = $xml.GetElementsByTagName("text")
+        $nodes[0].AppendChild($xml.CreateTextNode($Title)) | Out-Null
+        $nodes[1].AppendChild($xml.CreateTextNode($Message)) | Out-Null
+        $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+        $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("CHAMP AI Control Center")
+        $notifier.Show($toast)
+    } catch { }
+}
+
+# -----------------------------
+# Activity Log
+# -----------------------------
+function Write-ActivityLog {
+    param([string]$Entry)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $ActivityLogPath -Value "[$timestamp] $Entry" -ErrorAction SilentlyContinue
+}
+
+# -----------------------------
+# Color output helpers
+# -----------------------------
+function Write-OK   { param([string]$msg) Write-Host $msg -ForegroundColor Green }
+function Write-Warn { param([string]$msg) Write-Host $msg -ForegroundColor Yellow }
+function Write-Err  { param([string]$msg) Write-Host $msg -ForegroundColor Red }
+function Write-Info { param([string]$msg) Write-Host $msg -ForegroundColor Cyan }
+
+# -----------------------------
+# Audio/speech
+# -----------------------------
+function Speak-CHAMP {
+    param([string]$Message)
+    Write-Host $Message
+    if ($EnableVoice -and $Global:CHAMPSpeaker) {
+        try { $Global:CHAMPSpeaker.Speak($Message) } catch { Write-Host "Voice output failed." }
+    }
+}
+
+function Play-SuccessSound { if ($EnableSounds) { [console]::beep(800,150); [console]::beep(1000,150) } }
+function Play-ErrorSound   { if ($EnableSounds) { [console]::beep(300,350) } }
+function Play-StartSound   { if ($EnableSounds) { [console]::beep(600,120); [console]::beep(800,120); [console]::beep(1000,120) } }
+function Play-WolverineSound { if ($EnableSounds) { [console]::beep(250,120); [console]::beep(350,120); [console]::beep(500,180) } }
+
+# -----------------------------
+# Utilities
+# -----------------------------
+function Pause-Menu        { Write-Host ""; Read-Host "Press Enter to continue" }
+function Test-CommandExists { param([string]$Command) return [bool](Get-Command $Command -ErrorAction SilentlyContinue) }
+function Test-DockerRunning { if (-not (Test-CommandExists "docker")) { return $false }; docker info *> $null; return ($LASTEXITCODE -eq 0) }
+function Test-OllamaRunning { return [bool](Get-Process -Name "ollama" -ErrorAction SilentlyContinue) }
+
+function Show-Header {
+    Clear-Host
+    Write-Host "====================================================" -ForegroundColor DarkCyan
+    Write-Host "          CHAMP AI CONTROL CENTER" -ForegroundColor Cyan
+    Write-Host "             X-AGENT EDITION" -ForegroundColor Cyan
+    Write-Host "====================================================" -ForegroundColor DarkCyan
+    Write-Host " CEREBRO | Professor-X | Forge | Cyclops | Wolverine" -ForegroundColor DarkGray
+    Write-Host " Nightcrawler | Magneto | Ollama | Open WebUI" -ForegroundColor DarkGray
+    Write-Host "====================================================" -ForegroundColor DarkCyan
+    Write-Host ""
+}
+
+function CHAMP-Greeting { Play-StartSound; Speak-CHAMP "CEREBRO online. Good day, Champ. Local AI systems standing by." }
+
+# -----------------------------
+# CEREBRO System Status
+# -----------------------------
+function Show-SystemStatus {
+    Show-Header
+    Speak-CHAMP "CEREBRO is checking local AI system status."
+    $os = Get-CimInstance Win32_OperatingSystem
+    $totalRam = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2)
+    $freeRam  = [math]::Round($os.FreePhysicalMemory   / 1MB, 2)
+    $usedRam  = [math]::Round($totalRam - $freeRam, 2)
+
+    $disk = Get-PSDrive -Name C -ErrorAction SilentlyContinue
+    $freeDiskGB = if ($disk) { [math]::Round($disk.Free / 1GB, 1) } else { "N/A" }
+
+    Write-Info "System Status"
+    Write-Info "-------------"
+    Write-Host "RAM Total  : $totalRam GB"
+    if ($usedRam / $totalRam -gt 0.85) { Write-Warn "RAM Used   : $usedRam GB  [HIGH]" } else { Write-OK "RAM Used   : $usedRam GB" }
+    Write-Host "RAM Free   : $freeRam GB"
+    Write-Host "Disk Free  : $freeDiskGB GB  (C:)"
+    Write-Host ""
+
+    if (Test-CommandExists "ollama") {
+        if (Test-OllamaRunning) { Write-OK "Ollama     : Running" } else { Write-Warn "Ollama     : Installed — not running" }
+    } else { Write-Err "Ollama     : Not found" }
+
+    if (Test-CommandExists "docker") {
+        if (Test-DockerRunning) { Write-OK "Docker     : Running" } else { Write-Warn "Docker     : Installed — not running" }
+    } else { Write-Err "Docker     : Not found" }
+
+    if (Test-CommandExists "code") { Write-OK "VS Code    : CLI available" } else { Write-Warn "VS Code    : CLI not found" }
+
+    Write-Host ""
+    Write-Info "Open WebUI Container:"
+    if (Test-CommandExists "docker") {
+        docker ps -a --filter "name=$OpenWebUIContainer" --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
+    }
+
+    # Show currently loaded Ollama models
+    if (Test-OllamaRunning -and (Test-CommandExists "ollama")) {
+        Write-Host ""
+        Write-Info "Loaded Ollama Models (ollama ps):"
+        $psOutput = ollama ps 2>&1
+        if ($LASTEXITCODE -eq 0 -and $psOutput) { Write-Host $psOutput } else { Write-Host "  (no models currently loaded in memory)" -ForegroundColor DarkGray }
+    }
+
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# -----------------------------
+# Ollama controls
+# -----------------------------
+function Start-Ollama {
+    Show-Header
+    if (-not (Test-CommandExists "ollama")) { Speak-CHAMP "Ollama was not found. Please install Ollama first."; Play-ErrorSound; Pause-Menu; return }
+    if (Test-OllamaRunning) { Speak-CHAMP "Ollama is already running." } else {
+        Speak-CHAMP "Starting Ollama."
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 2
+        Speak-CHAMP "Ollama has started."
+    }
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Stop-Ollama {
+    Show-Header
+    if (-not (Test-OllamaRunning)) { Speak-CHAMP "Ollama is not currently running."; Pause-Menu; return }
+    Speak-CHAMP "Stopping Ollama."
+    Get-Process -Name "ollama" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 1
+    if (-not (Test-OllamaRunning)) { Write-OK "Ollama stopped."; Play-SuccessSound } else { Write-Err "Ollama may still be running."; Play-ErrorSound }
+    Pause-Menu
+}
+
+function List-OllamaModels {
+    Show-Header
+    if (-not (Test-CommandExists "ollama")) { Speak-CHAMP "Ollama was not found."; Play-ErrorSound; Pause-Menu; return }
+    Speak-CHAMP "Listing installed local AI models."
+    ollama list
+    Pause-Menu
+}
+
+# -----------------------------
+# Agent Map & Pull
+# -----------------------------
+function Show-AgentMap {
+    Show-Header
+    Speak-CHAMP "Displaying X Agent model assignments."
+    Write-Info "X-Agent Model Map"
+    Write-Info "-----------------"
+    foreach ($agent in $Agents.Keys | Sort-Object) {
+        Write-Host ""
+        Write-Host $agent -ForegroundColor Yellow
+        Write-Host "  Model: $($Agents[$agent].Model)"
+        Write-Host "  Role : $($Agents[$agent].Role)"
+    }
+    Pause-Menu
+}
+
+function Pull-AgentModels {
+    Show-Header
+    Speak-CHAMP "This will pull all recommended X Agent models."
+    $confirm = Read-Host "Pull all agent models? Type YES to continue"
+    if ($confirm -ne "YES") { Speak-CHAMP "Model download cancelled."; Pause-Menu; return }
+    foreach ($agent in $Agents.Keys | Sort-Object) {
+        $model = $Agents[$agent].Model
+        Speak-CHAMP "Pulling model for $agent."
+        Write-Host "Pulling $agent -> $model"
+        ollama pull $model
+    }
+    Speak-CHAMP "All X Agent models have been checked and pulled."
+    Send-ToastNotification "CHAMP AI" "All X-Agent models pulled successfully."
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Pull-SingleAgentModel {
+    Show-Header
+    Speak-CHAMP "Select an X Agent model to pull or update."
+    $agentList = $Agents.Keys | Sort-Object
+    for ($i = 0; $i -lt $agentList.Count; $i++) {
+        $num = $i + 1; $name = $agentList[$i]
+        Write-Host "$num. $name -> $($Agents[$name].Model)"
+    }
+    Write-Host "$($agentList.Count + 1). Cancel"
+    $choice = Read-Host "Select agent"
+    if ($choice -match '^\d+$') {
+        $index = [int]$choice - 1
+        if ($index -ge 0 -and $index -lt $agentList.Count) {
+            $agent = $agentList[$index]; $model = $Agents[$agent].Model
+            Speak-CHAMP "Pulling latest available model for $agent."
+            ollama pull $model
+            Send-ToastNotification "CHAMP AI" "$agent model pull complete."
+            Play-SuccessSound
+        } else { Speak-CHAMP "Cancelled." }
+    } else { Speak-CHAMP "Invalid selection."; Play-ErrorSound }
+    Pause-Menu
+}
+
+# -----------------------------
+# Agent activation & logging
+# -----------------------------
+function Activate-Agent {
+    param([string]$AgentName)
+    Show-Header
+    if (-not (Test-CommandExists "ollama")) { Speak-CHAMP "Ollama was not found."; Play-ErrorSound; Pause-Menu; return }
+    if (-not (Test-OllamaRunning)) {
+        Speak-CHAMP "Ollama is not running. Starting Ollama first."
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 2
+    }
+    $model = $Agents[$AgentName].Model
+    $role  = $Agents[$AgentName].Role
+    Speak-CHAMP "$AgentName is online. $role"
+    Write-Host ""
+    Write-Host "Agent : " -NoNewline; Write-Host $AgentName -ForegroundColor Yellow
+    Write-Host "Model : $model"
+    Write-Host "Role  : $role"
+    Write-Host ""
+    Write-ActivityLog "Agent activated: $AgentName ($model)"
+    ollama run $model
+    Pause-Menu
+}
+
+# -----------------------------
+# Quick Query (one-shot prompt)
+# -----------------------------
+function Quick-QueryAgent {
+    Show-Header
+    Write-Info "Quick Query — Send a one-shot prompt to an agent"
+    Write-Host ""
+    $agentList = $Agents.Keys | Sort-Object
+    for ($i = 0; $i -lt $agentList.Count; $i++) {
+        Write-Host "$($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]"
+    }
+    Write-Host "$($agentList.Count + 1). Cancel"
+    Write-Host ""
+    $choice = Read-Host "Select agent"
+    if (-not ($choice -match '^\d+$')) { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu; return }
+    $index = [int]$choice - 1
+    if ($index -lt 0 -or $index -ge $agentList.Count) { Speak-CHAMP "Cancelled."; Pause-Menu; return }
+
+    $agentName = $agentList[$index]
+    $model     = $Agents[$agentName].Model
+    Write-Host ""
+    $prompt = Read-Host "Enter your prompt for $agentName"
+    if ([string]::IsNullOrWhiteSpace($prompt)) { Speak-CHAMP "No prompt entered."; Pause-Menu; return }
+
+    if (-not (Test-OllamaRunning)) {
+        Speak-CHAMP "Starting Ollama."
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 2
+    }
+
+    Write-Host ""
+    Write-Info "--- $agentName responding ---"
+    Write-ActivityLog "Quick query to $agentName ($model): $prompt"
+    ollama run $model $prompt
+    Write-Info "--- end of response ---"
+    Pause-Menu
+}
+
+# -----------------------------
+# Smart Agent Router
+# -----------------------------
+function Smart-RouteAgent {
+    Show-Header
+    Write-Info "Smart Agent Router — describe your task and CEREBRO picks the best agent"
+    Write-Host ""
+    $query = Read-Host "What do you need help with?"
+    if ([string]::IsNullOrWhiteSpace($query)) { Speak-CHAMP "No query entered."; Pause-Menu; return }
+
+    $queryLower = $query.ToLower()
+    $bestAgent  = $null
+    $bestScore  = 0
+
+    foreach ($agent in $Agents.Keys) {
+        $score = 0
+        foreach ($kw in $Agents[$agent].Keywords) {
+            if ($queryLower -like "*$kw*") { $score++ }
+        }
+        if ($score -gt $bestScore) { $bestScore = $score; $bestAgent = $agent }
+    }
+
+    if (-not $bestAgent -or $bestScore -eq 0) {
+        Write-Warn "No strong match found. Defaulting to Professor-X."
+        $bestAgent = "Professor-X"
+    }
+
+    Write-Host ""
+    Write-Host "CEREBRO selected: " -NoNewline; Write-Host $bestAgent -ForegroundColor Yellow
+    Write-Host "Reason          : $bestScore keyword match(es) detected"
+    Write-Host "Model           : $($Agents[$bestAgent].Model)"
+    Write-Host ""
+    $confirm = Read-Host "Activate $bestAgent? (Enter=yes / N=cancel)"
+    if ($confirm -eq "N" -or $confirm -eq "n") { Speak-CHAMP "Routing cancelled."; Pause-Menu; return }
+
+    Write-ActivityLog "Smart route: query='$query' -> $bestAgent"
+    Activate-Agent $bestAgent
+}
+
+function Run-CustomModel {
+    Show-Header
+    $model = Read-Host "Enter custom Ollama model name"
+    if ([string]::IsNullOrWhiteSpace($model)) { Speak-CHAMP "No model selected."; Pause-Menu; return }
+    Speak-CHAMP "Starting custom model $model."
+    Write-ActivityLog "Custom model launched: $model"
+    ollama run $model
+    Pause-Menu
+}
+
+# -----------------------------
+# Activity Log viewer
+# -----------------------------
+function Show-ActivityLog {
+    Show-Header
+    Write-Info "CHAMP Activity Log"
+    Write-Info "------------------"
+    if (Test-Path $ActivityLogPath) {
+        $lines = Get-Content $ActivityLogPath -Tail 40
+        if ($lines) { $lines | ForEach-Object { Write-Host $_ } } else { Write-Host "(log is empty)" -ForegroundColor DarkGray }
+    } else {
+        Write-Host "(no activity log found yet)" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    $clear = Read-Host "Press Enter to go back, or type CLEAR to wipe the log"
+    if ($clear -eq "CLEAR") { Remove-Item $ActivityLogPath -Force -ErrorAction SilentlyContinue; Write-OK "Log cleared." }
+}
+
+# -----------------------------
+# Open WebUI management
+# -----------------------------
+function Start-OpenWebUI {
+    Show-Header
+    if (-not (Test-CommandExists "docker")) { Speak-CHAMP "Docker was not found. Please install Docker Desktop first."; Play-ErrorSound; Pause-Menu; return }
+    if (-not (Test-DockerRunning)) { Speak-CHAMP "Docker Desktop is not running. Please start Docker Desktop first."; Play-ErrorSound; Pause-Menu; return }
+    $existing = docker ps -a --filter "name=$OpenWebUIContainer" --format "{{.Names}}"
+    if ($existing -eq $OpenWebUIContainer) {
+        $running = docker ps --filter "name=$OpenWebUIContainer" --format "{{.Names}}"
+        if ($running -eq $OpenWebUIContainer) { Speak-CHAMP "Open WebUI is already online." } else {
+            Speak-CHAMP "Starting Open WebUI."
+            docker start $OpenWebUIContainer
+            Speak-CHAMP "Open WebUI has started."
+        }
+    } else {
+        Speak-CHAMP "Creating Open WebUI container."
+        docker run -d --name $OpenWebUIContainer -p ${OpenWebUIPort}:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data $OpenWebUIImage
+        Speak-CHAMP "Open WebUI has been created and started."
+    }
+    Write-OK "Dashboard: http://localhost:$OpenWebUIPort"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Stop-OpenWebUI {
+    Show-Header
+    if (-not (Test-DockerRunning)) { Speak-CHAMP "Docker is not running."; Play-ErrorSound; Pause-Menu; return }
+    Speak-CHAMP "Stopping Open WebUI."
+    docker stop $OpenWebUIContainer
+    Speak-CHAMP "Open WebUI has been stopped."
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Restart-OpenWebUI {
+    Show-Header
+    if (-not (Test-DockerRunning)) { Speak-CHAMP "Docker is not running."; Play-ErrorSound; Pause-Menu; return }
+    Speak-CHAMP "Restarting Open WebUI."
+    docker restart $OpenWebUIContainer
+    Speak-CHAMP "Open WebUI has restarted."
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Update-OpenWebUI {
+    Show-Header
+    if (-not (Test-DockerRunning)) { Speak-CHAMP "Docker is not running."; Play-ErrorSound; Pause-Menu; return }
+    Speak-CHAMP "Manual update mode. This avoids breaking your setup without approval."
+    $confirm = Read-Host "Update Open WebUI now? Type YES to continue"
+    if ($confirm -ne "YES") { Speak-CHAMP "Update cancelled."; Pause-Menu; return }
+    docker stop $OpenWebUIContainer 2>$null
+    Speak-CHAMP "Pulling latest Open WebUI image."
+    docker pull $OpenWebUIImage
+    Speak-CHAMP "Replacing container while preserving data volume."
+    docker rm $OpenWebUIContainer 2>$null
+    docker run -d --name $OpenWebUIContainer -p ${OpenWebUIPort}:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data $OpenWebUIImage
+    Speak-CHAMP "Open WebUI has been updated and restarted."
+    Send-ToastNotification "CHAMP AI" "Open WebUI updated and restarted."
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Open-WebDashboard { Speak-CHAMP "Opening Open WebUI dashboard."; Start-Process "http://localhost:$OpenWebUIPort" }
+
+function Show-DockerContainers {
+    Show-Header
+    if (-not (Test-CommandExists "docker")) { Speak-CHAMP "Docker was not found."; Play-ErrorSound; Pause-Menu; return }
+    Speak-CHAMP "Showing Docker containers."
+    docker ps -a --format "table {{.Names}}`t{{.Image}}`t{{.Status}}`t{{.Ports}}"
+    Pause-Menu
+}
+
+# -----------------------------
+# Wolverine Recovery
+# -----------------------------
+function Wolverine-HealthScan {
+    Show-Header
+    Play-WolverineSound
+    Speak-CHAMP "Wolverine is scanning system resilience."
+    Write-Info "Wolverine Health Scan"
+    Write-Info "---------------------"
+
+    if (Test-CommandExists "ollama") {
+        if (Test-OllamaRunning) { Write-OK "Ollama       : Healthy" } else { Write-Warn "Ollama       : Not running" }
+    } else { Write-Err "Ollama       : Missing" }
+
+    if (Test-CommandExists "docker") {
+        if (Test-DockerRunning) {
+            Write-OK "Docker       : Healthy"
+            $webui = docker ps --filter "name=$OpenWebUIContainer" --format "{{.Names}}"
+            if ($webui -eq $OpenWebUIContainer) { Write-OK "Open WebUI   : Healthy" } else { Write-Warn "Open WebUI   : Not running" }
+        } else { Write-Err "Docker       : Not running" }
+    } else { Write-Err "Docker       : Missing" }
+
+    $os = Get-CimInstance Win32_OperatingSystem
+    $freeRam = [math]::Round($os.FreePhysicalMemory / 1MB, 2)
+    if ($freeRam -lt 6) { Write-Warn "Free RAM     : $freeRam GB  [LOW]" } else { Write-OK "Free RAM     : $freeRam GB" }
+
+    $disk = Get-PSDrive -Name C -ErrorAction SilentlyContinue
+    if ($disk) {
+        $freeDiskGB = [math]::Round($disk.Free / 1GB, 1)
+        if ($freeDiskGB -lt 10) { Write-Warn "Free Disk    : $freeDiskGB GB  [LOW]" } else { Write-OK "Free Disk    : $freeDiskGB GB" }
+    }
+
+    if ($freeRam -lt 6) { Speak-CHAMP "Warning. System memory is low."; Play-ErrorSound } else { Speak-CHAMP "Wolverine scan complete. System is stable."; Play-SuccessSound }
+    Pause-Menu
+}
+
+function Wolverine-RecoverServices {
+    Show-Header
+    Play-WolverineSound
+    Speak-CHAMP "Wolverine recovery protocol engaged."
+    if (Test-CommandExists "ollama") {
+        if (-not (Test-OllamaRunning)) { Speak-CHAMP "Recovering Ollama."; Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized; Start-Sleep -Seconds 2 } else { Write-OK "Ollama already running." }
+    }
+    if (Test-DockerRunning) {
+        $existing = docker ps -a --filter "name=$OpenWebUIContainer" --format "{{.Names}}"
+        if ($existing -eq $OpenWebUIContainer) {
+            $running = docker ps --filter "name=$OpenWebUIContainer" --format "{{.Names}}"
+            if ($running -ne $OpenWebUIContainer) { Speak-CHAMP "Recovering Open WebUI."; docker start $OpenWebUIContainer } else { Write-OK "Open WebUI already running." }
+        } else { Speak-CHAMP "Open WebUI container was not found. Use Start Open WebUI to create it." }
+    } else { Speak-CHAMP "Docker is not running. Manual action required."; Play-ErrorSound; Pause-Menu; return }
+    Speak-CHAMP "Wolverine recovery complete."
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Wolverine-EmergencyRestart {
+    Show-Header
+    Play-WolverineSound
+    Speak-CHAMP "Emergency restart mode. This will restart Open WebUI and ensure Ollama is running."
+    $confirm = Read-Host "Continue? Type YES to continue"
+    if ($confirm -ne "YES") { Speak-CHAMP "Emergency restart cancelled."; Pause-Menu; return }
+    if ((Test-CommandExists "ollama") -and (-not (Test-OllamaRunning))) { Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized }
+    if (Test-DockerRunning) { docker restart $OpenWebUIContainer; Speak-CHAMP "Open WebUI restarted." } else { Speak-CHAMP "Docker is not running. Start Docker Desktop first."; Play-ErrorSound }
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Open-VSCodeProject {
+    Show-Header
+    Write-Host "Default project path:"
+    Write-Host $DefaultProjectPath
+    $path = Read-Host "Press Enter to use default, or type another project path"
+    if ([string]::IsNullOrWhiteSpace($path)) { $path = $DefaultProjectPath }
+    if (-not (Test-Path $path)) { Speak-CHAMP "Project path does not exist."; Write-Err "Path does not exist: $path"; Play-ErrorSound; Pause-Menu; return }
+    if (Test-CommandExists "code") { Speak-CHAMP "Opening Visual Studio Code."; code $path; Play-SuccessSound } else { Speak-CHAMP "Visual Studio Code command line was not found."; Play-ErrorSound }
+    Pause-Menu
+}
+
+function Toggle-Voice  { Show-Header; $script:EnableVoice  = -not $script:EnableVoice;  if ($script:EnableVoice)  { Speak-CHAMP "Voice responses are now enabled." }  else { Write-Host "Voice responses are now disabled." };  Pause-Menu }
+function Toggle-Sounds { Show-Header; $script:EnableSounds = -not $script:EnableSounds; if ($script:EnableSounds) { Write-Host "Sound alerts are now enabled."; Play-SuccessSound } else { Write-Host "Sound alerts are now disabled." }; Pause-Menu }
+
+# ============================================================
+# AI DEV TOOLS
+# ============================================================
+
+# --- 1. GPU / Hardware Monitor ---
+function Show-HardwareMonitor {
+    Show-Header
+    Write-Info "Hardware Monitor"
+    Write-Info "----------------"
+
+    $os      = Get-CimInstance Win32_OperatingSystem
+    $cpu     = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $totalGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2)
+    $freeGB  = [math]::Round($os.FreePhysicalMemory   / 1MB, 2)
+    $usedGB  = [math]::Round($totalGB - $freeGB, 2)
+    $pct     = [math]::Round(($usedGB / $totalGB) * 100, 0)
+    $load    = $cpu.LoadPercentage
+
+    Write-Host "CPU  : $($cpu.Name.Trim())"
+    if ($load -gt 80) { Write-Warn "CPU Load : $load%" } else { Write-OK "CPU Load : $load%" }
+    Write-Host ""
+    Write-Host "RAM  : $usedGB GB used / $totalGB GB total  ($pct%)"
+    if ($pct -gt 85) { Write-Warn "RAM pressure is HIGH" } else { Write-OK "RAM pressure OK" }
+    Write-Host ""
+
+    # NVIDIA GPU
+    if (Test-CommandExists "nvidia-smi") {
+        Write-Info "NVIDIA GPU:"
+        nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total,driver_version `
+                   --format=csv,noheader,nounits 2>$null | ForEach-Object {
+            $parts = $_ -split ","
+            if ($parts.Count -ge 6) {
+                Write-Host "  Name       : $($parts[0].Trim())"
+                Write-Host "  Temp       : $($parts[1].Trim()) C"
+                if ([int]$parts[2].Trim() -gt 80) { Write-Warn "  GPU Use    : $($parts[2].Trim())%" } else { Write-OK "  GPU Use    : $($parts[2].Trim())%" }
+                $vramUsed  = [math]::Round([int]$parts[3].Trim() / 1024, 1)
+                $vramTotal = [math]::Round([int]$parts[4].Trim() / 1024, 1)
+                Write-Host "  VRAM       : $vramUsed GB / $vramTotal GB"
+                Write-Host "  Driver     : $($parts[5].Trim())"
+            }
+        }
+    } else {
+        Write-Host "NVIDIA GPU : nvidia-smi not found (CPU inference only)" -ForegroundColor DarkGray
+    }
+
+    # Disk
+    Write-Host ""
+    Write-Info "Storage:"
+    Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -gt 0 } | ForEach-Object {
+        $usedD  = [math]::Round($_.Used  / 1GB, 1)
+        $freeD  = [math]::Round($_.Free  / 1GB, 1)
+        $totalD = [math]::Round(($_.Used + $_.Free) / 1GB, 1)
+        $pctD   = if ($totalD -gt 0) { [math]::Round(($usedD / $totalD) * 100, 0) } else { 0 }
+        $line   = "  $($_.Name):  $usedD GB used / $totalD GB  ($pctD% full)"
+        if ($pctD -gt 85) { Write-Warn $line } else { Write-Host $line }
+    }
+
+    Pause-Menu
+}
+
+# --- 2. Modelfile Creator ---
+function New-AgentModelfile {
+    Show-Header
+    Write-Info "Modelfile Creator — Build a custom agent with a system prompt"
+    Write-Host ""
+    Write-Host "Base models available in your agent map:"
+    $Agents.Keys | Sort-Object | ForEach-Object { Write-Host "  - $($Agents[$_].Model)" }
+    Write-Host ""
+    $baseName = Read-Host "Base model (e.g. llama3.1:8b)"
+    if ([string]::IsNullOrWhiteSpace($baseName)) { Speak-CHAMP "Cancelled."; Pause-Menu; return }
+
+    $agentName = Read-Host "New agent name (e.g. DataScout)"
+    if ([string]::IsNullOrWhiteSpace($agentName)) { Speak-CHAMP "Cancelled."; Pause-Menu; return }
+
+    Write-Host ""
+    Write-Host "Enter a system prompt for $agentName (one line, be specific about role and behavior):"
+    $systemPrompt = Read-Host "System prompt"
+    if ([string]::IsNullOrWhiteSpace($systemPrompt)) { Speak-CHAMP "System prompt cannot be empty."; Play-ErrorSound; Pause-Menu; return }
+
+    $temp = Read-Host "Temperature 0.0-1.0 (Enter for default 0.7)"
+    if ([string]::IsNullOrWhiteSpace($temp)) { $temp = "0.7" }
+
+    $modelfilePath = "$PSScriptRoot\Modelfile-$agentName"
+    $modelfileContent = @"
+FROM $baseName
+
+PARAMETER temperature $temp
+
+SYSTEM """
+$systemPrompt
+"""
+"@
+    Set-Content -Path $modelfilePath -Value $modelfileContent -Encoding UTF8
+    Write-OK "Modelfile saved: $modelfilePath"
+    Write-Host ""
+
+    $build = Read-Host "Build the model now with 'ollama create'? (Enter=yes / N=skip)"
+    if ($build -ne "N" -and $build -ne "n") {
+        if (-not (Test-CommandExists "ollama")) { Speak-CHAMP "Ollama not found."; Play-ErrorSound; Pause-Menu; return }
+        $tag = $agentName.ToLower() -replace '\s+','-'
+        Write-Info "Building model: $tag"
+        ollama create $tag -f $modelfilePath
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Model '$tag' created. You can run it via Custom Model in the Agent Launcher."
+            Write-ActivityLog "Modelfile created: $tag from $baseName"
+            Play-SuccessSound
+        } else {
+            Write-Err "Build failed. Check the Modelfile at $modelfilePath"
+            Play-ErrorSound
+        }
+    }
+    Pause-Menu
+}
+
+# --- 3. Model Benchmark ---
+function Benchmark-Model {
+    Show-Header
+    Write-Info "Model Benchmark — Measures response latency and estimates tokens/sec"
+    Write-Host ""
+
+    if (-not (Test-CommandExists "ollama")) { Speak-CHAMP "Ollama not found."; Play-ErrorSound; Pause-Menu; return }
+    if (-not (Test-OllamaRunning)) {
+        Speak-CHAMP "Starting Ollama for benchmark."
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 3
+    }
+
+    $agentList = $Agents.Keys | Sort-Object
+    for ($i = 0; $i -lt $agentList.Count; $i++) { Write-Host "$($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]" }
+    Write-Host "$($agentList.Count + 1). Custom model"
+    $choice = Read-Host "Select model to benchmark"
+
+    $model = $null
+    if ($choice -match '^\d+$') {
+        $idx = [int]$choice - 1
+        if ($idx -ge 0 -and $idx -lt $agentList.Count) { $model = $Agents[$agentList[$idx]].Model }
+        elseif ($idx -eq $agentList.Count) { $model = Read-Host "Enter custom model name" }
+    }
+    if ([string]::IsNullOrWhiteSpace($model)) { Speak-CHAMP "Cancelled."; Pause-Menu; return }
+
+    $prompt = Read-Host "Benchmark prompt (Enter for default)"
+    if ([string]::IsNullOrWhiteSpace($prompt)) { $prompt = "List five practical tips for writing efficient Python code. Be concise." }
+
+    Write-Host ""
+    Write-Info "Benchmarking $model ..."
+    $start    = Get-Date
+    $response = ollama run $model $prompt 2>&1
+    $elapsed  = (Get-Date) - $start
+    $secs     = [math]::Round($elapsed.TotalSeconds, 2)
+
+    $wordCount  = ($response -split '\s+' | Where-Object { $_ }).Count
+    $tokenEst   = [math]::Round($wordCount * 1.3, 0)
+    $tps        = if ($secs -gt 0) { [math]::Round($tokenEst / $secs, 1) } else { "N/A" }
+
+    Write-Host ""
+    Write-Info "--- Response ---"
+    Write-Host $response
+    Write-Host ""
+    Write-Info "--- Benchmark Results ---"
+    Write-Host "Model          : $model"
+    Write-Host "Elapsed        : $secs seconds"
+    Write-Host "Est. tokens    : $tokenEst  (~1.3 tokens/word)"
+    Write-Host "Est. tokens/s  : $tps"
+    Write-ActivityLog "Benchmark: $model  ${secs}s  ~${tps} tok/s"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# --- 4. Prompt Library ---
+$PromptLibPath = "$PSScriptRoot\CHAMP-prompts.json"
+
+function Load-PromptLibrary {
+    if (Test-Path $PromptLibPath) {
+        try { return Get-Content $PromptLibPath -Raw | ConvertFrom-Json -AsHashtable } catch { return @{} }
+    }
+    return @{}
+}
+
+function Save-PromptLibrary {
+    param([hashtable]$Library)
+    $Library | ConvertTo-Json -Depth 3 | Set-Content -Path $PromptLibPath -Encoding UTF8
+}
+
+function Manage-PromptLibrary {
+    do {
+        Show-Header
+        Write-Info "Prompt Library"
+        Write-Info "--------------"
+        $lib = Load-PromptLibrary
+        if ($lib.Count -eq 0) {
+            Write-Host "(no saved prompts)" -ForegroundColor DarkGray
+        } else {
+            $i = 1
+            foreach ($key in $lib.Keys | Sort-Object) {
+                $preview = $lib[$key]
+                if ($preview.Length -gt 70) { $preview = $preview.Substring(0,70) + "..." }
+                Write-Host "$i. [$key]  $preview"
+                $i++
+            }
+        }
+        Write-Host ""
+        Write-Host "A. Add prompt    U. Use prompt    D. Delete prompt    B. Back"
+        $action = Read-Host "Action"
+
+        switch ($action.ToUpper()) {
+            "A" {
+                $name = Read-Host "Prompt name (short label)"
+                if ([string]::IsNullOrWhiteSpace($name)) { break }
+                Write-Host "Enter the prompt text:"
+                $text = Read-Host "Prompt"
+                if ([string]::IsNullOrWhiteSpace($text)) { break }
+                $lib[$name] = $text
+                Save-PromptLibrary $lib
+                Write-OK "Saved: $name"
+                Write-ActivityLog "Prompt library: added '$name'"
+                Start-Sleep -Seconds 1
+            }
+            "U" {
+                if ($lib.Count -eq 0) { Write-Warn "Library is empty."; Start-Sleep 1; break }
+                $keys = $lib.Keys | Sort-Object
+                for ($i = 0; $i -lt $keys.Count; $i++) { Write-Host "$($i+1). $($keys[$i])" }
+                $sel = Read-Host "Select prompt number"
+                if ($sel -match '^\d+$') {
+                    $idx = [int]$sel - 1
+                    if ($idx -ge 0 -and $idx -lt $keys.Count) {
+                        $selectedPrompt = $lib[$keys[$idx]]
+                        Write-Host ""
+                        Write-Info "Prompt: $selectedPrompt"
+                        Write-Host ""
+                        # Pick agent
+                        $agentList = $Agents.Keys | Sort-Object
+                        for ($j = 0; $j -lt $agentList.Count; $j++) { Write-Host "$($j+1). $($agentList[$j])" }
+                        $ac = Read-Host "Send to which agent? (number)"
+                        if ($ac -match '^\d+$') {
+                            $aidx = [int]$ac - 1
+                            if ($aidx -ge 0 -and $aidx -lt $agentList.Count) {
+                                $agentName = $agentList[$aidx]
+                                $model = $Agents[$agentName].Model
+                                Write-Info "Sending to $agentName ($model)..."
+                                Write-ActivityLog "Prompt library use: '$($keys[$idx])' -> $agentName"
+                                ollama run $model $selectedPrompt
+                                Pause-Menu
+                            }
+                        }
+                    }
+                }
+            }
+            "D" {
+                if ($lib.Count -eq 0) { Write-Warn "Library is empty."; Start-Sleep 1; break }
+                $keys = $lib.Keys | Sort-Object
+                for ($i = 0; $i -lt $keys.Count; $i++) { Write-Host "$($i+1). $($keys[$i])" }
+                $sel = Read-Host "Delete prompt number"
+                if ($sel -match '^\d+$') {
+                    $idx = [int]$sel - 1
+                    if ($idx -ge 0 -and $idx -lt $keys.Count) {
+                        $lib.Remove($keys[$idx])
+                        Save-PromptLibrary $lib
+                        Write-OK "Deleted: $($keys[$idx])"
+                        Start-Sleep -Seconds 1
+                    }
+                }
+            }
+            "B" { return }
+        }
+    } while ($true)
+}
+
+# --- 5. Agent Chain Pipeline ---
+function Run-AgentChain {
+    Show-Header
+    Write-Info "Agent Chain Pipeline — Route Agent A output into Agent B"
+    Write-Host ""
+
+    if (-not (Test-OllamaRunning)) {
+        Speak-CHAMP "Starting Ollama."
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 2
+    }
+
+    $agentList = $Agents.Keys | Sort-Object
+    Write-Host "Step 1 — First agent:"
+    for ($i = 0; $i -lt $agentList.Count; $i++) { Write-Host "  $($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]" }
+    $a1 = Read-Host "Select first agent"
+    if (-not ($a1 -match '^\d+$') -or [int]$a1 -lt 1 -or [int]$a1 -gt $agentList.Count) { Speak-CHAMP "Invalid."; Pause-Menu; return }
+    $agent1 = $agentList[[int]$a1 - 1]
+
+    Write-Host ""
+    Write-Host "Step 2 — Second agent (receives Agent 1 output as context):"
+    for ($i = 0; $i -lt $agentList.Count; $i++) { Write-Host "  $($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]" }
+    $a2 = Read-Host "Select second agent"
+    if (-not ($a2 -match '^\d+$') -or [int]$a2 -lt 1 -or [int]$a2 -gt $agentList.Count) { Speak-CHAMP "Invalid."; Pause-Menu; return }
+    $agent2 = $agentList[[int]$a2 - 1]
+
+    Write-Host ""
+    $initialPrompt = Read-Host "Initial prompt for $agent1"
+    if ([string]::IsNullOrWhiteSpace($initialPrompt)) { Speak-CHAMP "No prompt."; Pause-Menu; return }
+
+    $followPrompt = Read-Host "Instruction for $agent2 about what to do with the first response (Enter for default)"
+    if ([string]::IsNullOrWhiteSpace($followPrompt)) { $followPrompt = "Review the following and improve or expand on it:" }
+
+    Write-Host ""
+    Write-Info "--- $agent1 responding ---"
+    $response1 = ollama run $Agents[$agent1].Model $initialPrompt 2>&1
+    Write-Host $response1
+    Write-Host ""
+
+    $chainedPrompt = "$followPrompt`n`n$response1"
+    Write-Info "--- $agent2 responding ---"
+    ollama run $Agents[$agent2].Model $chainedPrompt 2>&1
+    Write-Info "--- chain complete ---"
+    Write-ActivityLog "Agent chain: $agent1 -> $agent2  prompt='$initialPrompt'"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# --- 6. Python AI Environment Wizard ---
+function Setup-PythonAIEnv {
+    Show-Header
+    Write-Info "Python AI Environment Wizard"
+    Write-Info "-----------------------------"
+
+    if (-not (Test-CommandExists "python")) {
+        Write-Err "Python not found. Install Python 3.10+ and add it to PATH."
+        Play-ErrorSound; Pause-Menu; return
+    }
+    $pyVer = python --version 2>&1
+    Write-Host "Python: $pyVer"
+    Write-Host ""
+
+    $envPath = Read-Host "Enter path for new venv (Enter for .\champ-ai-env)"
+    if ([string]::IsNullOrWhiteSpace($envPath)) { $envPath = "$PSScriptRoot\champ-ai-env" }
+
+    Write-Host ""
+    Write-Host "Package bundles (can select multiple, comma-separated):"
+    Write-Host "  1. Core AI      - torch transformers accelerate"
+    Write-Host "  2. LangChain    - langchain langchain-community"
+    Write-Host "  3. LlamaIndex   - llama-index"
+    Write-Host "  4. Ollama SDK   - ollama"
+    Write-Host "  5. Data Science - numpy pandas scikit-learn matplotlib"
+    Write-Host "  6. API/Web      - fastapi uvicorn python-dotenv httpx"
+    Write-Host "  7. Notebooks    - jupyter notebook ipykernel"
+    Write-Host ""
+    $bundleChoice = Read-Host "Select bundles (e.g. 1,4,6)"
+
+    $packageMap = @{
+        "1" = @("torch", "transformers", "accelerate")
+        "2" = @("langchain", "langchain-community")
+        "3" = @("llama-index")
+        "4" = @("ollama")
+        "5" = @("numpy", "pandas", "scikit-learn", "matplotlib")
+        "6" = @("fastapi", "uvicorn", "python-dotenv", "httpx")
+        "7" = @("jupyter", "notebook", "ipykernel")
+    }
+
+    $packages = @()
+    $bundleChoice -split "," | ForEach-Object {
+        $k = $_.Trim()
+        if ($packageMap.ContainsKey($k)) { $packages += $packageMap[$k] }
+    }
+
+    if ($packages.Count -eq 0) { Write-Warn "No valid bundles selected. Creating empty venv."; }
+
+    Write-Host ""
+    Write-Info "Creating virtual environment at $envPath ..."
+    python -m venv $envPath
+    if ($LASTEXITCODE -ne 0) { Write-Err "Failed to create venv."; Play-ErrorSound; Pause-Menu; return }
+
+    $pipExe = "$envPath\Scripts\pip.exe"
+    Write-Info "Upgrading pip..."
+    & $pipExe install --upgrade pip --quiet
+
+    if ($packages.Count -gt 0) {
+        Write-Info "Installing packages: $($packages -join ', ')"
+        & $pipExe install @packages
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "All packages installed successfully."
+            Send-ToastNotification "CHAMP AI" "Python AI env ready: $envPath"
+        } else {
+            Write-Warn "Some packages may have failed. Check output above."
+        }
+    }
+
+    # Save activate hint
+    $activateCmd = "$envPath\Scripts\Activate.ps1"
+    Write-Host ""
+    Write-OK "Environment ready."
+    Write-Host "Activate with: " -NoNewline; Write-Host $activateCmd -ForegroundColor Yellow
+    Write-ActivityLog "Python AI env created: $envPath  packages: $($packages -join ' ')"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# --- 7. Jupyter Launcher ---
+function Launch-Jupyter {
+    Show-Header
+    Write-Info "Jupyter Notebook Launcher"
+    Write-Host ""
+
+    # Try venv first, then global
+    $jupyterCmd = $null
+    $venvJupyter = "$PSScriptRoot\champ-ai-env\Scripts\jupyter.exe"
+    if (Test-Path $venvJupyter) { $jupyterCmd = $venvJupyter }
+    elseif (Test-CommandExists "jupyter") { $jupyterCmd = "jupyter" }
+
+    if (-not $jupyterCmd) {
+        Write-Err "Jupyter not found. Run Python AI Env Wizard and select bundle 7."
+        Play-ErrorSound; Pause-Menu; return
+    }
+
+    $nbPath = Read-Host "Notebook folder path (Enter for default project path)"
+    if ([string]::IsNullOrWhiteSpace($nbPath)) { $nbPath = $DefaultProjectPath }
+    if (-not (Test-Path $nbPath)) {
+        Write-Warn "Path does not exist, launching in current directory."
+        $nbPath = $PSScriptRoot
+    }
+
+    Write-Info "Starting Jupyter Notebook at $nbPath ..."
+    Start-Process $jupyterCmd -ArgumentList "notebook --notebook-dir=`"$nbPath`"" -WindowStyle Normal
+    Start-Sleep -Seconds 3
+    Start-Process "http://localhost:8888"
+    Write-OK "Jupyter launched. Browser opening to http://localhost:8888"
+    Write-ActivityLog "Jupyter launched at $nbPath"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# --- 8. Ollama REST API Tester ---
+function Test-OllamaAPI {
+    Show-Header
+    Write-Info "Ollama REST API Tester  (http://localhost:11434)"
+    Write-Host ""
+
+    if (-not (Test-OllamaRunning)) {
+        Write-Warn "Ollama is not running. Starting it now..."
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 3
+    }
+
+    Write-Host "1. GET  /api/tags    — list installed models"
+    Write-Host "2. GET  /api/version — Ollama version"
+    Write-Host "3. POST /api/generate — one-shot generate"
+    Write-Host "4. POST /api/show    — model info"
+    Write-Host "5. Back"
+    $choice = Read-Host "Select"
+
+    switch ($choice) {
+        "1" {
+            Write-Info "GET /api/tags"
+            try {
+                $r = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -Method GET -ErrorAction Stop
+                $r.models | ForEach-Object { Write-Host "  $($_.name)  [$([math]::Round($_.size/1GB,2)) GB]" }
+            } catch { Write-Err "Request failed: $_" }
+        }
+        "2" {
+            Write-Info "GET /api/version"
+            try {
+                $r = Invoke-RestMethod -Uri "http://localhost:11434/api/version" -Method GET -ErrorAction Stop
+                Write-OK "Ollama version: $($r.version)"
+            } catch { Write-Err "Request failed: $_" }
+        }
+        "3" {
+            $model  = Read-Host "Model name (e.g. llama3.1:8b)"
+            $prompt = Read-Host "Prompt"
+            if ([string]::IsNullOrWhiteSpace($model) -or [string]::IsNullOrWhiteSpace($prompt)) { break }
+            Write-Info "POST /api/generate ..."
+            try {
+                $body = @{ model = $model; prompt = $prompt; stream = $false } | ConvertTo-Json
+                $r    = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST `
+                            -Body $body -ContentType "application/json" -ErrorAction Stop -TimeoutSec 120
+                Write-Host ""
+                Write-Host $r.response
+                Write-Host ""
+                Write-Info "Total duration: $([math]::Round($r.total_duration/1e9,2))s"
+            } catch { Write-Err "Request failed: $_" }
+        }
+        "4" {
+            $model = Read-Host "Model name"
+            if ([string]::IsNullOrWhiteSpace($model)) { break }
+            try {
+                $body = @{ name = $model } | ConvertTo-Json
+                $r    = Invoke-RestMethod -Uri "http://localhost:11434/api/show" -Method POST `
+                            -Body $body -ContentType "application/json" -ErrorAction Stop
+                Write-Host "Parameters : $($r.parameters)"
+                Write-Host "Template   : $($r.template)"
+                Write-Host "License    : $($r.license)"
+            } catch { Write-Err "Request failed: $_" }
+        }
+        "5" { return }
+    }
+    Pause-Menu
+}
+
+# --- 9. AI Services Port Dashboard ---
+function Show-PortDashboard {
+    Show-Header
+    Write-Info "AI Services Port Dashboard"
+    Write-Info "--------------------------"
+
+    $services = @(
+        @{ Name = "Ollama API";      Port = 11434; URL = "http://localhost:11434" }
+        @{ Name = "Open WebUI";      Port = 3000;  URL = "http://localhost:3000"  }
+        @{ Name = "Jupyter";         Port = 8888;  URL = "http://localhost:8888"  }
+        @{ Name = "FastAPI (dev)";   Port = 8000;  URL = "http://localhost:8000"  }
+        @{ Name = "Gradio";          Port = 7860;  URL = "http://localhost:7860"  }
+        @{ Name = "Streamlit";       Port = 8501;  URL = "http://localhost:8501"  }
+        @{ Name = "LiteLLM Proxy";   Port = 4000;  URL = "http://localhost:4000"  }
+        @{ Name = "AnythingLLM";     Port = 3001;  URL = "http://localhost:3001"  }
+    )
+
+    $listening = netstat -ano 2>$null | Select-String "LISTENING" | ForEach-Object {
+        if ($_ -match ':(\d+)\s') { $matches[1] }
+    } | Sort-Object -Unique
+
+    foreach ($svc in $services) {
+        $portStr = "$($svc.Port)"
+        if ($listening -contains $portStr) {
+            Write-OK "  [ACTIVE]   $($svc.Name.PadRight(18)) port $portStr  $($svc.URL)"
+        } else {
+            Write-Host "  [------]   $($svc.Name.PadRight(18)) port $portStr" -ForegroundColor DarkGray
+        }
+    }
+
+    Write-Host ""
+    $open = Read-Host "Enter port number to open in browser (or Enter to go back)"
+    if ($open -match '^\d+$') {
+        $match = $services | Where-Object { $_.Port -eq [int]$open }
+        if ($match) { Start-Process $match.URL } else { Start-Process "http://localhost:$open" }
+    }
+}
+
+# --- 10. API Key Manager (.env) ---
+$EnvFilePath = "$PSScriptRoot\.env"
+
+function Manage-APIKeys {
+    Show-Header
+    Write-Info "API Key Manager  (.env)"
+    Write-Info "-----------------------"
+    Write-Host "Keys are stored in: $EnvFilePath"
+    Write-Host "Values are masked on screen."
+    Write-Host ""
+
+    $knownKeys = @("OPENAI_API_KEY","ANTHROPIC_API_KEY","HF_TOKEN","GROQ_API_KEY","COHERE_API_KEY","REPLICATE_API_TOKEN","PINECONE_API_KEY","LANGCHAIN_API_KEY")
+
+    # Load existing
+    $envMap = [ordered]@{}
+    if (Test-Path $EnvFilePath) {
+        Get-Content $EnvFilePath | ForEach-Object {
+            if ($_ -match '^([^#=]+)=(.*)$') { $envMap[$matches[1].Trim()] = $matches[2].Trim() }
+        }
+    }
+
+    # Display (masked)
+    if ($envMap.Count -gt 0) {
+        Write-Host "Current keys:"
+        foreach ($k in $envMap.Keys) {
+            $val = $envMap[$k]
+            $masked = if ($val.Length -gt 8) { $val.Substring(0,4) + ("*" * ($val.Length - 8)) + $val.Substring($val.Length - 4) } else { "****" }
+            Write-Host "  $k = $masked"
+        }
+    } else {
+        Write-Host "(no keys saved yet)" -ForegroundColor DarkGray
+    }
+
+    Write-Host ""
+    Write-Host "S. Set/Update key    D. Delete key    B. Back"
+    $action = Read-Host "Action"
+
+    switch ($action.ToUpper()) {
+        "S" {
+            Write-Host ""
+            Write-Host "Known keys (or type a custom name):"
+            for ($i = 0; $i -lt $knownKeys.Count; $i++) { Write-Host "  $($i+1). $($knownKeys[$i])" }
+            $ksel = Read-Host "Key name or number"
+            $keyName = $null
+            if ($ksel -match '^\d+$') {
+                $kidx = [int]$ksel - 1
+                if ($kidx -ge 0 -and $kidx -lt $knownKeys.Count) { $keyName = $knownKeys[$kidx] }
+            }
+            if ([string]::IsNullOrWhiteSpace($keyName)) { $keyName = $ksel.Trim().ToUpper() }
+            if ([string]::IsNullOrWhiteSpace($keyName)) { break }
+
+            $secureVal = Read-Host "Enter value for $keyName" -AsSecureString
+            $bstr      = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureVal)
+            $plainVal  = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+
+            $envMap[$keyName] = $plainVal
+
+            # Write back
+            $lines = @()
+            foreach ($k in $envMap.Keys) { $lines += "$k=$($envMap[$k])" }
+            Set-Content -Path $EnvFilePath -Value $lines -Encoding UTF8
+            Write-OK "Key saved: $keyName"
+            Write-ActivityLog "API key set: $keyName"
+        }
+        "D" {
+            $keyDel = Read-Host "Key name to delete"
+            if ($envMap.ContainsKey($keyDel)) {
+                $envMap.Remove($keyDel)
+                $lines = @()
+                foreach ($k in $envMap.Keys) { $lines += "$k=$($envMap[$k])" }
+                Set-Content -Path $EnvFilePath -Value $lines -Encoding UTF8
+                Write-OK "Deleted: $keyDel"
+                Write-ActivityLog "API key deleted: $keyDel"
+            } else { Write-Warn "Key not found: $keyDel" }
+        }
+        "B" { return }
+    }
+    Pause-Menu
+}
+
+# ============================================================
+# NEW FEATURES — WORKSTATION AI DEV SUITE
+# ============================================================
+
+# --- A. Backup & Restore ---
+$BackupRoot = "$PSScriptRoot\CHAMP-Backups"
+
+function Backup-CHAMPData {
+    Show-Header
+    Write-Info "Backup & Restore — Backup"
+    Write-Host ""
+
+    $timestamp  = Get-Date -Format "yyyyMMdd-HHmmss"
+    $backupDir  = "$BackupRoot\backup-$timestamp"
+    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+
+    $items = @()
+
+    # .env
+    if (Test-Path "$PSScriptRoot\.env") {
+        Copy-Item "$PSScriptRoot\.env" "$backupDir\.env"
+        $items += ".env"
+    }
+    # Prompt library
+    if (Test-Path "$PSScriptRoot\CHAMP-prompts.json") {
+        Copy-Item "$PSScriptRoot\CHAMP-prompts.json" "$backupDir\CHAMP-prompts.json"
+        $items += "CHAMP-prompts.json"
+    }
+    # Activity log
+    if (Test-Path "$PSScriptRoot\CHAMP-activity.log") {
+        Copy-Item "$PSScriptRoot\CHAMP-activity.log" "$backupDir\CHAMP-activity.log"
+        $items += "CHAMP-activity.log"
+    }
+    # Modelfiles
+    Get-ChildItem "$PSScriptRoot\Modelfile-*" -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName "$backupDir\$($_.Name)"
+        $items += $_.Name
+    }
+
+    # Open WebUI Docker volume
+    if (Test-DockerRunning) {
+        $volumeBackup = "$backupDir\open-webui-volume.tar"
+        Write-Host "Exporting Open WebUI Docker volume..."
+        docker run --rm -v open-webui:/data -v "${backupDir}:/backup" alpine `
+            tar czf /backup/open-webui-volume.tar.gz /data 2>$null
+        if ($LASTEXITCODE -eq 0) { $items += "open-webui-volume.tar.gz" }
+        else { Write-Warn "Docker volume export skipped (Docker may not be running or volume missing)." }
+    } else {
+        Write-Warn "Docker not running — Open WebUI volume skipped."
+    }
+
+    if ($items.Count -eq 0) {
+        Write-Warn "Nothing to back up yet."
+        Remove-Item $backupDir -Force -ErrorAction SilentlyContinue
+        Pause-Menu; return
+    }
+
+    Write-OK "Backup complete: $backupDir"
+    Write-Host "Items saved:"
+    $items | ForEach-Object { Write-Host "  - $_" }
+    Write-ActivityLog "Backup created: $backupDir  ($($items.Count) items)"
+    Send-ToastNotification "CHAMP AI" "Backup complete: $timestamp"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Restore-CHAMPData {
+    Show-Header
+    Write-Info "Backup & Restore — Restore"
+    Write-Host ""
+
+    if (-not (Test-Path $BackupRoot)) {
+        Write-Warn "No backups found at $BackupRoot"
+        Pause-Menu; return
+    }
+
+    $backups = Get-ChildItem $BackupRoot -Directory | Sort-Object Name -Descending
+    if ($backups.Count -eq 0) { Write-Warn "No backups found."; Pause-Menu; return }
+
+    Write-Host "Available backups (newest first):"
+    for ($i = 0; $i -lt $backups.Count; $i++) {
+        $size = (Get-ChildItem $backups[$i].FullName -Recurse -ErrorAction SilentlyContinue |
+                 Measure-Object -Property Length -Sum).Sum
+        $sizeKB = [math]::Round($size / 1KB, 0)
+        Write-Host "  $($i+1). $($backups[$i].Name)  ($sizeKB KB)"
+    }
+    Write-Host ""
+    $sel = Read-Host "Select backup to restore (or Enter to cancel)"
+    if (-not ($sel -match '^\d+$')) { Speak-CHAMP "Cancelled."; Pause-Menu; return }
+    $idx = [int]$sel - 1
+    if ($idx -lt 0 -or $idx -ge $backups.Count) { Speak-CHAMP "Invalid."; Pause-Menu; return }
+
+    $srcDir = $backups[$idx].FullName
+    Write-Host ""
+    Write-Warn "This will overwrite your current .env, prompts, and Modelfiles."
+    $confirm = Read-Host "Type YES to restore from $($backups[$idx].Name)"
+    if ($confirm -ne "YES") { Speak-CHAMP "Restore cancelled."; Pause-Menu; return }
+
+    # Restore flat files
+    foreach ($file in @(".env","CHAMP-prompts.json","CHAMP-activity.log")) {
+        $src = "$srcDir\$file"
+        if (Test-Path $src) { Copy-Item $src "$PSScriptRoot\$file" -Force; Write-OK "Restored: $file" }
+    }
+    # Restore Modelfiles
+    Get-ChildItem "$srcDir\Modelfile-*" -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName "$PSScriptRoot\$($_.Name)" -Force
+        Write-OK "Restored: $($_.Name)"
+    }
+    # Restore Docker volume
+    $volTar = "$srcDir\open-webui-volume.tar.gz"
+    if ((Test-Path $volTar) -and (Test-DockerRunning)) {
+        Write-Host "Restoring Open WebUI volume..."
+        docker run --rm -v open-webui:/data -v "${srcDir}:/backup" alpine `
+            sh -c "rm -rf /data/* && tar xzf /backup/open-webui-volume.tar.gz -C / 2>/dev/null"
+        if ($LASTEXITCODE -eq 0) { Write-OK "Open WebUI volume restored." }
+        else { Write-Warn "Volume restore failed — you may need to restart Open WebUI." }
+    }
+
+    Write-ActivityLog "Restore completed from: $($backups[$idx].Name)"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Backup-Menu {
+    do {
+        Show-Header
+        Write-Info "Backup & Restore"
+        Write-Info "----------------"
+        Write-Host "1. Create Backup   (configs, prompts, Modelfiles, WebUI volume)"
+        Write-Host "2. Restore Backup"
+        Write-Host "3. Browse Backups"
+        Write-Host "4. Back"
+        $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { Backup-CHAMPData }
+            "2" { Restore-CHAMPData }
+            "3" {
+                Show-Header
+                if (Test-Path $BackupRoot) {
+                    Get-ChildItem $BackupRoot -Directory | Sort-Object Name -Descending | ForEach-Object {
+                        $items = (Get-ChildItem $_.FullName -ErrorAction SilentlyContinue).Count
+                        Write-Host "$($_.Name)  ($items files)"
+                    }
+                } else { Write-Warn "No backups yet." }
+                Pause-Menu
+            }
+            "4" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "4")
+}
+
+# --- B. Model Delete + Disk Manager ---
+function Manage-ModelDisk {
+    Show-Header
+    Write-Info "Model Disk Manager"
+    Write-Info "------------------"
+
+    if (-not (Test-CommandExists "ollama")) { Speak-CHAMP "Ollama not found."; Play-ErrorSound; Pause-Menu; return }
+
+    # Parse ollama list output
+    $raw = ollama list 2>&1
+    $lines = $raw -split "`n" | Where-Object { $_ -match '\S' } | Select-Object -Skip 1  # skip header
+
+    if (-not $lines) { Write-Warn "No models installed."; Pause-Menu; return }
+
+    $models = @()
+    foreach ($line in $lines) {
+        $parts = $line -split '\s{2,}'
+        if ($parts.Count -ge 3) {
+            $models += [PSCustomObject]@{
+                Name     = $parts[0].Trim()
+                Size     = $parts[2].Trim()
+                Modified = if ($parts.Count -ge 4) { $parts[3].Trim() } else { "" }
+            }
+        }
+    }
+
+    if ($models.Count -eq 0) { Write-Warn "Could not parse model list."; Pause-Menu; return }
+
+    Write-Host ""
+    $i = 1
+    foreach ($m in $models) {
+        Write-Host "$i. $($m.Name.PadRight(35)) $($m.Size.PadRight(10)) $($m.Modified)"
+        $i++
+    }
+    Write-Host ""
+
+    # Disk summary
+    $disk = Get-PSDrive -Name C -ErrorAction SilentlyContinue
+    if ($disk) {
+        $freeGB = [math]::Round($disk.Free / 1GB, 1)
+        if ($freeGB -lt 15) { Write-Warn "Free disk: $freeGB GB  [GETTING LOW]" } else { Write-OK "Free disk: $freeGB GB" }
+    }
+    Write-Host ""
+    Write-Host "D. Delete a model    B. Back"
+    $action = Read-Host "Action"
+
+    if ($action.ToUpper() -eq "D") {
+        $sel = Read-Host "Model number to delete"
+        if ($sel -match '^\d+$') {
+            $idx = [int]$sel - 1
+            if ($idx -ge 0 -and $idx -lt $models.Count) {
+                $target = $models[$idx].Name
+                Write-Warn "This will permanently delete: $target"
+                $confirm = Read-Host "Type YES to confirm"
+                if ($confirm -eq "YES") {
+                    ollama rm $target
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-OK "Deleted: $target"
+                        Write-ActivityLog "Model deleted: $target"
+                        Play-SuccessSound
+                    } else {
+                        Write-Err "Delete failed."
+                        Play-ErrorSound
+                    }
+                } else { Write-Host "Cancelled." }
+            }
+        }
+        Pause-Menu
+    }
+}
+
+# --- C. RAM/VRAM Model Advisor ---
+function Show-ModelAdvisor {
+    Show-Header
+    Write-Info "RAM / VRAM Model Advisor"
+    Write-Info "------------------------"
+    Write-Host "Checks whether your system can run a model before you pull it."
+    Write-Host ""
+
+    $os      = Get-CimInstance Win32_OperatingSystem
+    $totalGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2)
+    $freeGB  = [math]::Round($os.FreePhysicalMemory   / 1MB, 2)
+
+    $vramGB = 0
+    if (Test-CommandExists "nvidia-smi") {
+        $vramRaw = nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>$null
+        if ($vramRaw -match '^\d+') { $vramGB = [math]::Round([int]$vramRaw / 1024, 1) }
+    }
+
+    Write-Host "Your system:"
+    Write-Host "  Total RAM  : $totalGB GB"
+    Write-OK   "  Free RAM   : $freeGB GB"
+    if ($vramGB -gt 0) { Write-OK "  GPU VRAM   : $vramGB GB" } else { Write-Warn "  GPU VRAM   : Not detected (CPU inference only)" }
+    Write-Host ""
+
+    # Common model requirements table
+    $modelReqs = @(
+        [PSCustomObject]@{ Name="phi3:mini";          RAM=4;  VRAM=3;  Size="2.2 GB";  Notes="Great for quick tasks" }
+        [PSCustomObject]@{ Name="phi3:medium";        RAM=8;  VRAM=6;  Size="7.9 GB";  Notes="Balanced mid-range" }
+        [PSCustomObject]@{ Name="llama3.1:8b";        RAM=8;  VRAM=6;  Size="4.7 GB";  Notes="Professor-X — excellent all-rounder" }
+        [PSCustomObject]@{ Name="llama3.1:70b";       RAM=40; VRAM=40; Size="40 GB";   Notes="Large — needs high-end GPU or lots of RAM" }
+        [PSCustomObject]@{ Name="mistral:7b";         RAM=8;  VRAM=6;  Size="4.1 GB";  Notes="Cyclops — fast and capable" }
+        [PSCustomObject]@{ Name="qwen2.5-coder:7b";   RAM=8;  VRAM=6;  Size="4.4 GB";  Notes="Forge — coding specialist" }
+        [PSCustomObject]@{ Name="codellama:7b";       RAM=8;  VRAM=6;  Size="3.8 GB";  Notes="Magneto — code generation" }
+        [PSCustomObject]@{ Name="codellama:34b";      RAM=20; VRAM=20; Size="19 GB";   Notes="Large code model" }
+        [PSCustomObject]@{ Name="llava:7b";           RAM=8;  VRAM=6;  Size="4.5 GB";  Notes="Vision + language (multimodal)" }
+        [PSCustomObject]@{ Name="deepseek-coder:6.7b";RAM=8;  VRAM=5;  Size="3.8 GB";  Notes="Strong coder, efficient" }
+        [PSCustomObject]@{ Name="gemma2:9b";          RAM=10; VRAM=8;  Size="5.4 GB";  Notes="Google Gemma 2" }
+        [PSCustomObject]@{ Name="gemma2:27b";         RAM=20; VRAM=18; Size="16 GB";   Notes="Larger Gemma 2" }
+        [PSCustomObject]@{ Name="mixtral:8x7b";       RAM=32; VRAM=28; Size="26 GB";   Notes="MoE — powerful but heavy" }
+    )
+
+    Write-Info "Model compatibility:"
+    Write-Host ("  " + "Model".PadRight(28) + "RAM req".PadRight(10) + "VRAM req".PadRight(10) + "Disk".PadRight(10) + "Status")
+    Write-Host ("  " + ("-" * 75))
+
+    foreach ($m in $modelReqs) {
+        $ramOK  = $freeGB  -ge $m.RAM
+        $vramOK = ($vramGB -ge $m.VRAM) -or ($vramGB -eq 0)  # no GPU = CPU fallback
+        $status = if ($ramOK) { "OK" } else { "LOW RAM" }
+        $line   = "  $($m.Name.PadRight(28))$("$($m.RAM) GB".PadRight(10))$("$($m.VRAM) GB".PadRight(10))$($m.Size.PadRight(10))$status  $($m.Notes)"
+        if ($ramOK) { Write-OK $line } else { Write-Warn $line }
+    }
+
+    Write-Host ""
+    $check = Read-Host "Enter a custom model name to check RAM estimate (or Enter to go back)"
+    if (-not [string]::IsNullOrWhiteSpace($check)) {
+        # Heuristic: extract param count from name e.g. 7b, 13b, 34b, 70b
+        $paramMatch = [regex]::Match($check, '(\d+\.?\d*)b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($paramMatch.Success) {
+            $params  = [double]$paramMatch.Groups[1].Value
+            $estRAM  = [math]::Round($params * 0.7, 1)   # ~0.7 GB per B param at Q4
+            $estDisk = [math]::Round($params * 0.55, 1)
+            Write-Host ""
+            Write-Host "Estimate for $check ($($params)B params, Q4 quantization):"
+            Write-Host "  Disk space : ~$estDisk GB"
+            Write-Host "  RAM needed : ~$estRAM GB"
+            if ($freeGB -ge $estRAM) { Write-OK "  Your free RAM ($freeGB GB) should be sufficient." }
+            else { Write-Warn "  Your free RAM ($freeGB GB) may be too low — expect slow or failed inference." }
+        } else {
+            Write-Warn "Could not parse parameter count from model name. Look for a number like 7b, 13b, 70b in the name."
+        }
+        Pause-Menu
+    }
+}
+
+# --- D. Session Export ---
+$SessionExportDir = "$PSScriptRoot\CHAMP-Sessions"
+
+function Export-AgentSession {
+    Show-Header
+    Write-Info "Session Export — Save agent output to a file"
+    Write-Host ""
+
+    if (-not (Test-OllamaRunning)) {
+        Speak-CHAMP "Starting Ollama."
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 2
+    }
+
+    $agentList = $Agents.Keys | Sort-Object
+    for ($i = 0; $i -lt $agentList.Count; $i++) {
+        Write-Host "$($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]"
+    }
+    Write-Host ""
+    $sel = Read-Host "Select agent"
+    if (-not ($sel -match '^\d+$') -or [int]$sel -lt 1 -or [int]$sel -gt $agentList.Count) {
+        Speak-CHAMP "Cancelled."; Pause-Menu; return
+    }
+    $agentName = $agentList[[int]$sel - 1]
+    $model     = $Agents[$agentName].Model
+
+    $prompt = Read-Host "Prompt"
+    if ([string]::IsNullOrWhiteSpace($prompt)) { Speak-CHAMP "No prompt."; Pause-Menu; return }
+
+    $fmt = Read-Host "Save as (1) Markdown  (2) Plain text  — Enter for Markdown"
+    $ext = if ($fmt -eq "2") { "txt" } else { "md" }
+
+    Write-Info "Running $agentName ..."
+    $startTime = Get-Date
+    $response  = ollama run $model $prompt 2>&1
+    $elapsed   = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
+
+    New-Item -ItemType Directory -Path $SessionExportDir -Force | Out-Null
+    $filename  = "$SessionExportDir\$agentName-$(Get-Date -Format 'yyyyMMdd-HHmmss').$ext"
+
+    if ($ext -eq "md") {
+        $content = @"
+# CHAMP AI Session Export
+
+**Agent**   : $agentName
+**Model**   : $model
+**Date**    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+**Elapsed** : ${elapsed}s
+
+---
+
+## Prompt
+
+$prompt
+
+---
+
+## Response
+
+$response
+"@
+    } else {
+        $content = @"
+CHAMP AI Session Export
+Agent   : $agentName
+Model   : $model
+Date    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+Elapsed : ${elapsed}s
+
+PROMPT:
+$prompt
+
+RESPONSE:
+$response
+"@
+    }
+
+    Set-Content -Path $filename -Value $content -Encoding UTF8
+    Write-OK "Saved: $filename"
+    Write-ActivityLog "Session exported: $agentName -> $filename"
+
+    $open = Read-Host "Open file now? (Enter=yes / N=skip)"
+    if ($open -ne "N" -and $open -ne "n") {
+        if (Test-CommandExists "code") { code $filename } else { Start-Process notepad $filename }
+    }
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# --- E. Docker Compose Full-Stack Generator ---
+function New-DockerComposeStack {
+    Show-Header
+    Write-Info "Docker Compose Full-Stack Generator"
+    Write-Info "------------------------------------"
+    Write-Host ""
+    Write-Host "Select services to include (comma-separated numbers):"
+    Write-Host "  1. Ollama          — local LLM runtime"
+    Write-Host "  2. Open WebUI      — chat UI for Ollama  (port 3000)"
+    Write-Host "  3. n8n             — AI workflow automation  (port 5678)"
+    Write-Host "  4. Flowise         — visual LLM chain builder  (port 3001)"
+    Write-Host "  5. LiteLLM Proxy   — unified LLM API gateway  (port 4000)"
+    Write-Host "  6. SearXNG         — private search engine for RAG  (port 8080)"
+    Write-Host "  7. Qdrant          — vector database  (port 6333)"
+    Write-Host "  8. Redis           — cache / session store  (port 6379)"
+    Write-Host ""
+    $sel     = Read-Host "Services (e.g. 1,2,3)"
+    $outPath = Read-Host "Save path (Enter for $PSScriptRoot\docker-compose.yml)"
+    if ([string]::IsNullOrWhiteSpace($outPath)) { $outPath = "$PSScriptRoot\docker-compose.yml" }
+
+    $chosen = $sel -split "," | ForEach-Object { $_.Trim() }
+
+    $services = ""
+
+    if ($chosen -contains "1") {
+        $services += @"
+
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+"@
+    }
+
+    if ($chosen -contains "2") {
+        $ollamaUrl = if ($chosen -contains "1") { "http://ollama:11434" } else { "http://host.docker.internal:11434" }
+        $services += @"
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: champ-open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    volumes:
+      - open-webui_data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=$ollamaUrl
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+"@
+    }
+
+    if ($chosen -contains "3") {
+        $services += @"
+
+  n8n:
+    image: n8nio/n8n
+    container_name: champ-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=changeme
+"@
+    }
+
+    if ($chosen -contains "4") {
+        $services += @"
+
+  flowise:
+    image: flowiseai/flowise
+    container_name: champ-flowise
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - flowise_data:/root/.flowise
+    environment:
+      - PORT=3000
+"@
+    }
+
+    if ($chosen -contains "5") {
+        $services += @"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: champ-litellm
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    command: --model ollama/llama3.1 --api_base http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+"@
+    }
+
+    if ($chosen -contains "6") {
+        $services += @"
+
+  searxng:
+    image: searxng/searxng
+    container_name: champ-searxng
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - searxng_data:/etc/searxng
+"@
+    }
+
+    if ($chosen -contains "7") {
+        $services += @"
+
+  qdrant:
+    image: qdrant/qdrant
+    container_name: champ-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+"@
+    }
+
+    if ($chosen -contains "8") {
+        $services += @"
+
+  redis:
+    image: redis:alpine
+    container_name: champ-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+"@
+    }
+
+    # Build volumes block
+    $volNames = @()
+    if ($chosen -contains "1") { $volNames += "ollama_data:" }
+    if ($chosen -contains "2") { $volNames += "open-webui_data:" }
+    if ($chosen -contains "3") { $volNames += "n8n_data:" }
+    if ($chosen -contains "4") { $volNames += "flowise_data:" }
+    if ($chosen -contains "6") { $volNames += "searxng_data:" }
+    if ($chosen -contains "7") { $volNames += "qdrant_data:" }
+    if ($chosen -contains "8") { $volNames += "redis_data:" }
+    $volumesBlock = if ($volNames.Count -gt 0) { "`n`nvolumes:`n" + ($volNames | ForEach-Object { "  $_" } | Out-String) } else { "" }
+
+    $compose = @"
+# CHAMP AI Full Stack — generated $(Get-Date -Format 'yyyy-MM-dd HH:mm')
+# Start  : docker compose up -d
+# Stop   : docker compose down
+# Logs   : docker compose logs -f
+
+version: "3.8"
+
+services:
+$services
+$volumesBlock
+"@
+
+    Set-Content -Path $outPath -Value $compose -Encoding UTF8
+    Write-OK "Saved: $outPath"
+    Write-Host ""
+    Write-Host "Run it with:"
+    Write-Host "  docker compose -f `"$outPath`" up -d" -ForegroundColor Yellow
+    Write-Host ""
+    $launch = Read-Host "Launch stack now? (Enter=yes / N=skip)"
+    if ($launch -ne "N" -and $launch -ne "n") {
+        if (Test-DockerRunning) {
+            Write-Info "Starting stack..."
+            docker compose -f $outPath up -d
+            Play-SuccessSound
+            Send-ToastNotification "CHAMP AI" "Docker Compose stack started."
+        } else { Write-Err "Docker not running. Start Docker Desktop first." }
+    }
+    Write-ActivityLog "Docker Compose generated: $outPath  services=$sel"
+    Pause-Menu
+}
+
+# --- F. Windows Terminal Profile Installer ---
+function Install-WindowsTerminalProfile {
+    Show-Header
+    Write-Info "Windows Terminal Profile Installer"
+    Write-Info "----------------------------------"
+    Write-Host ""
+
+    $wtSettingsPaths = @(
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json"
+    )
+
+    $settingsPath = $null
+    foreach ($p in $wtSettingsPaths) { if (Test-Path $p) { $settingsPath = $p; break } }
+
+    if (-not $settingsPath) {
+        Write-Err "Windows Terminal settings.json not found."
+        Write-Host "Install Windows Terminal from the Microsoft Store first." -ForegroundColor DarkGray
+        Play-ErrorSound; Pause-Menu; return
+    }
+
+    Write-OK "Found: $settingsPath"
+    Write-Host ""
+
+    # Read and parse
+    $rawJson = Get-Content $settingsPath -Raw
+    try { $settings = $rawJson | ConvertFrom-Json } catch {
+        Write-Err "Could not parse settings.json: $_"; Play-ErrorSound; Pause-Menu; return
+    }
+
+    # Check if profile already exists
+    $existing = $settings.profiles.list | Where-Object { $_.name -eq "CHAMP AI" }
+    if ($existing) {
+        Write-Warn "A 'CHAMP AI' profile already exists in Windows Terminal."
+        $overwrite = Read-Host "Overwrite it? (Enter=yes / N=cancel)"
+        if ($overwrite -eq "N" -or $overwrite -eq "n") { Pause-Menu; return }
+        $settings.profiles.list = $settings.profiles.list | Where-Object { $_.name -ne "CHAMP AI" }
+    }
+
+    $scriptPath = "$PSScriptRoot\champ-ai-control-center-xagents.ps1"
+    $guid       = [System.Guid]::NewGuid().ToString("B")
+
+    $newProfile = [PSCustomObject]@{
+        guid             = $guid
+        name             = "CHAMP AI"
+        commandline      = "pwsh.exe -NoExit -ExecutionPolicy Bypass -File `"$scriptPath`""
+        startingDirectory= $PSScriptRoot
+        icon             = "$PSScriptRoot\champ-icon.ico"
+        colorScheme      = "One Half Dark"
+        fontFace         = "Cascadia Code"
+        fontSize         = 12
+        tabTitle         = "CHAMP AI"
+        backgroundImage  = $null
+        hidden           = $false
+    }
+
+    # Add profile and write back
+    $settings.profiles.list = @($newProfile) + @($settings.profiles.list)
+
+    # Preserve original JSON format as much as possible
+    $updatedJson = $settings | ConvertTo-Json -Depth 20
+    Set-Content -Path $settingsPath -Value $updatedJson -Encoding UTF8
+
+    Write-OK "CHAMP AI profile added to Windows Terminal."
+    Write-Host ""
+    Write-Host "To make it your default tab, open Windows Terminal Settings and set"
+    Write-Host "'Default profile' to 'CHAMP AI'." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "Open Windows Terminal now to see the new profile."
+
+    $launch = Read-Host "Open Windows Terminal now? (Enter=yes / N=skip)"
+    if ($launch -ne "N" -and $launch -ne "n") { Start-Process "wt.exe" }
+
+    Write-ActivityLog "Windows Terminal profile installed"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# --- G. Ollama Model Search ---
+function Search-OllamaModels {
+    Show-Header
+    Write-Info "Ollama Model Search"
+    Write-Info "-------------------"
+    Write-Host "Searches the Ollama library via the REST API."
+    Write-Host ""
+
+    $query = Read-Host "Search term (e.g. 'coder', 'vision', 'mistral', Enter for popular)"
+
+    $url = if ([string]::IsNullOrWhiteSpace($query)) {
+        "https://ollama.com/api/tags?sort=popular&limit=20"
+    } else {
+        "https://ollama.com/api/search?q=$([Uri]::EscapeDataString($query))&limit=20"
+    }
+
+    Write-Host ""
+    Write-Info "Fetching from ollama.com ..."
+
+    try {
+        $resp = Invoke-RestMethod -Uri $url -TimeoutSec 15 -ErrorAction Stop
+        $models = if ($resp.models) { $resp.models } elseif ($resp -is [array]) { $resp } else { $null }
+
+        if (-not $models) { Write-Warn "No results found."; Pause-Menu; return }
+
+        $i = 1
+        foreach ($m in $models) {
+            $name   = if ($m.name) { $m.name } else { $m.model }
+            $desc   = if ($m.description) {
+                $d = $m.description; if ($d.Length -gt 60) { $d = $d.Substring(0,60) + "..." }; $d
+            } else { "" }
+            $pulls  = if ($m.pulls) { "  $([math]::Round($m.pulls/1000,0))K pulls" } else { "" }
+            Write-Host "$i. $($name.PadRight(30)) $($desc)$pulls"
+            $i++
+        }
+
+        Write-Host ""
+        $sel = Read-Host "Enter number to pull that model (or Enter to go back)"
+        if ($sel -match '^\d+$') {
+            $idx = [int]$sel - 1
+            if ($idx -ge 0 -and $idx -lt $models.Count) {
+                $target = if ($models[$idx].name) { $models[$idx].name } else { $models[$idx].model }
+                if (-not (Test-OllamaRunning)) {
+                    Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized; Start-Sleep 2
+                }
+                Write-Info "Pulling $target ..."
+                ollama pull $target
+                if ($LASTEXITCODE -eq 0) {
+                    Write-OK "Pull complete: $target"
+                    Send-ToastNotification "CHAMP AI" "Model ready: $target"
+                    Write-ActivityLog "Model pulled from search: $target"
+                    Play-SuccessSound
+                } else { Write-Err "Pull failed."; Play-ErrorSound }
+            }
+        }
+    } catch {
+        Write-Err "Could not reach ollama.com: $_"
+        Write-Host "Check your internet connection." -ForegroundColor DarkGray
+    }
+    Pause-Menu
+}
+
+# --- H. Scheduled Agent Queries (Windows Task Scheduler) ---
+function Manage-ScheduledQueries {
+    do {
+        Show-Header
+        Write-Info "Scheduled Agent Queries"
+        Write-Info "-----------------------"
+        Write-Host "Uses Windows Task Scheduler to run agent prompts on a schedule."
+        Write-Host "Output is saved to CHAMP-Sessions as a Markdown file."
+        Write-Host ""
+        Write-Host "1. Create new scheduled query"
+        Write-Host "2. List CHAMP scheduled tasks"
+        Write-Host "3. Delete a CHAMP scheduled task"
+        Write-Host "4. Back"
+        $choice = Read-Host "Select"
+
+        switch ($choice) {
+            "1" {
+                Show-Header
+                Write-Info "Create Scheduled Query"
+                Write-Host ""
+
+                $agentList = $Agents.Keys | Sort-Object
+                for ($i = 0; $i -lt $agentList.Count; $i++) {
+                    Write-Host "$($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]"
+                }
+                $sel = Read-Host "Select agent"
+                if (-not ($sel -match '^\d+$') -or [int]$sel -lt 1 -or [int]$sel -gt $agentList.Count) {
+                    Write-Warn "Invalid."; Pause-Menu; break
+                }
+                $agentName = $agentList[[int]$sel - 1]
+                $model     = $Agents[$agentName].Model
+
+                $prompt    = Read-Host "Prompt to run on schedule"
+                if ([string]::IsNullOrWhiteSpace($prompt)) { break }
+
+                $taskName  = Read-Host "Task name (e.g. 'Morning-Briefing')"
+                if ([string]::IsNullOrWhiteSpace($taskName)) { break }
+                $taskName  = "CHAMP-$($taskName -replace '\s+','-')"
+
+                Write-Host ""
+                Write-Host "Schedule type:"
+                Write-Host "  1. Daily   (specify time)"
+                Write-Host "  2. Hourly"
+                Write-Host "  3. At logon"
+                $sched = Read-Host "Select"
+
+                $triggerArgs = switch ($sched) {
+                    "1" {
+                        $t = Read-Host "Run time (HH:mm, e.g. 08:00)"
+                        "/SC DAILY /ST $t"
+                    }
+                    "2" { "/SC HOURLY" }
+                    "3" { "/SC ONLOGON" }
+                    default { "/SC DAILY /ST 08:00" }
+                }
+
+                New-Item -ItemType Directory -Path $SessionExportDir -Force | Out-Null
+                $outFile  = "$SessionExportDir\scheduled-$agentName-`$(date /t).md"
+
+                # Build a wrapper ps1 that runs the query and saves output
+                $wrapperPath = "$PSScriptRoot\sched-$taskName.ps1"
+                $wrapperContent = @"
+# Auto-generated by CHAMP AI Scheduler — $taskName
+`$model  = "$model"
+`$prompt = "$prompt"
+`$out    = "$SessionExportDir\$taskName-`$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+`$resp   = ollama run `$model `$prompt 2>&1
+`$md     = "# Scheduled: $taskName``n**Agent**: $agentName | **Date**: `$(Get-Date)``n``n## Prompt``n`$prompt``n``n## Response``n`$resp"
+Set-Content -Path `$out -Value `$md -Encoding UTF8
+"@
+                Set-Content -Path $wrapperPath -Value $wrapperContent -Encoding UTF8
+
+                $action  = "pwsh.exe -NonInteractive -ExecutionPolicy Bypass -File `"$wrapperPath`""
+                $schtask = "schtasks /Create /TN `"$taskName`" /TR `"$action`" $triggerArgs /F"
+                Invoke-Expression $schtask
+
+                if ($LASTEXITCODE -eq 0) {
+                    Write-OK "Task '$taskName' created."
+                    Write-ActivityLog "Scheduled task created: $taskName  agent=$agentName"
+                    Play-SuccessSound
+                } else {
+                    Write-Err "Task creation failed. Try running as Administrator."
+                    Play-ErrorSound
+                }
+                Pause-Menu
+            }
+            "2" {
+                Show-Header
+                Write-Info "CHAMP Scheduled Tasks"
+                schtasks /Query /FO TABLE 2>$null | Select-String "CHAMP-"
+                Pause-Menu
+            }
+            "3" {
+                Show-Header
+                $tasks = schtasks /Query /FO CSV 2>$null | ConvertFrom-Csv | Where-Object { $_.TaskName -like "*CHAMP-*" }
+                if (-not $tasks) { Write-Warn "No CHAMP tasks found."; Pause-Menu; break }
+                $i = 1
+                foreach ($t in $tasks) { Write-Host "$i. $($t.TaskName)"; $i++ }
+                $sel = Read-Host "Delete task number"
+                if ($sel -match '^\d+$') {
+                    $idx = [int]$sel - 1
+                    $taskArr = @($tasks)
+                    if ($idx -ge 0 -and $idx -lt $taskArr.Count) {
+                        $tn = $taskArr[$idx].TaskName.Trim('\')
+                        schtasks /Delete /TN $tn /F
+                        # Clean up wrapper script
+                        $wrapper = "$PSScriptRoot\sched-$tn.ps1"
+                        if (Test-Path $wrapper) { Remove-Item $wrapper -Force }
+                        Write-OK "Deleted: $tn"
+                        Write-ActivityLog "Scheduled task deleted: $tn"
+                        Play-SuccessSound
+                    }
+                }
+                Pause-Menu
+            }
+            "4" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "4")
+}
+
+# --- I. Multi-Model Comparison ---
+function Compare-Models {
+    Show-Header
+    Write-Info "Multi-Model Comparison"
+    Write-Info "----------------------"
+    Write-Host "Send the same prompt to 2 or 3 agents and compare responses side-by-side."
+    Write-Host ""
+
+    if (-not (Test-OllamaRunning)) {
+        Speak-CHAMP "Starting Ollama."
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 2
+    }
+
+    $agentList = $Agents.Keys | Sort-Object
+    for ($i = 0; $i -lt $agentList.Count; $i++) {
+        Write-Host "$($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]"
+    }
+    Write-Host ""
+    $selRaw = Read-Host "Select 2 or 3 agents (comma-separated, e.g. 1,2,3)"
+    $sels   = $selRaw -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' }
+
+    if ($sels.Count -lt 2 -or $sels.Count -gt 3) {
+        Write-Warn "Select exactly 2 or 3 agents."; Pause-Menu; return
+    }
+
+    $selectedAgents = @()
+    foreach ($s in $sels) {
+        $idx = [int]$s - 1
+        if ($idx -ge 0 -and $idx -lt $agentList.Count) { $selectedAgents += $agentList[$idx] }
+    }
+    if ($selectedAgents.Count -lt 2) { Write-Warn "Invalid selection."; Pause-Menu; return }
+
+    $prompt = Read-Host "Prompt to send to all agents"
+    if ([string]::IsNullOrWhiteSpace($prompt)) { Speak-CHAMP "No prompt."; Pause-Menu; return }
+
+    $save = Read-Host "Save comparison to Markdown? (Enter=yes / N=skip)"
+
+    $results    = @{}
+    $timings    = @{}
+    $divider    = "=" * 60
+
+    Write-Host ""
+    foreach ($agent in $selectedAgents) {
+        $model = $Agents[$agent].Model
+        Write-Info "Querying $agent ($model) ..."
+        $t0        = Get-Date
+        $response  = ollama run $model $prompt 2>&1
+        $elapsed   = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
+        $results[$agent]  = $response
+        $timings[$agent]  = $elapsed
+        Write-OK "$agent done in ${elapsed}s"
+    }
+
+    # Display
+    Write-Host ""
+    Write-Host $divider -ForegroundColor DarkCyan
+    Write-Host "  COMPARISON RESULTS" -ForegroundColor Cyan
+    Write-Host $divider -ForegroundColor DarkCyan
+
+    foreach ($agent in $selectedAgents) {
+        Write-Host ""
+        Write-Host "[ $agent — $($Agents[$agent].Model) — $($timings[$agent])s ]" -ForegroundColor Yellow
+        Write-Host ("-" * 50) -ForegroundColor DarkGray
+        Write-Host $results[$agent]
+    }
+
+    Write-Host ""
+    Write-Host $divider -ForegroundColor DarkCyan
+
+    # Timing summary
+    Write-Info "Timing summary:"
+    $fastest = $selectedAgents | Sort-Object { $timings[$_] } | Select-Object -First 1
+    foreach ($agent in $selectedAgents) {
+        $marker = if ($agent -eq $fastest) { " <- fastest" } else { "" }
+        Write-Host "  $($agent.PadRight(16)) $($timings[$agent])s$marker"
+    }
+
+    # Save to file
+    if ($save -ne "N" -and $save -ne "n") {
+        New-Item -ItemType Directory -Path $SessionExportDir -Force | Out-Null
+        $fname = "$SessionExportDir\comparison-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+        $md    = "# CHAMP AI Model Comparison`n`n**Date**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n`n## Prompt`n`n$prompt`n`n## Results`n"
+        foreach ($agent in $selectedAgents) {
+            $md += "`n### $agent ($($Agents[$agent].Model)) — $($timings[$agent])s`n`n$($results[$agent])`n"
+        }
+        Set-Content -Path $fname -Value $md -Encoding UTF8
+        Write-OK "Saved: $fname"
+        Write-ActivityLog "Model comparison saved: $fname  agents=$($selectedAgents -join ',')"
+    }
+
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# ============================================================
+# UI GENERATION STUDIO
+# ============================================================
+
+# -----------------------------
+# REST API helpers
+# -----------------------------
+function Invoke-OllamaWithSystem {
+    param(
+        [string]$Model,
+        [string]$SystemPrompt,
+        [string]$UserPrompt,
+        [int]$TimeoutSec = 180
+    )
+    if (-not (Test-OllamaRunning)) {
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 3
+    }
+    $body = @{ model = $Model; prompt = $UserPrompt; system = $SystemPrompt; stream = $false } | ConvertTo-Json -Depth 3
+    try {
+        $r = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST `
+             -Body $body -ContentType "application/json" -TimeoutSec $TimeoutSec -ErrorAction Stop
+        return $r.response
+    } catch { return $null }
+}
+
+function Invoke-OllamaVision {
+    param(
+        [string]$Model,
+        [string]$Prompt,
+        [string]$ImagePath,
+        [int]$TimeoutSec = 180
+    )
+    if (-not (Test-Path $ImagePath)) { return $null }
+    if (-not (Test-OllamaRunning)) {
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 3
+    }
+    $bytes  = [System.IO.File]::ReadAllBytes($ImagePath)
+    $base64 = [Convert]::ToBase64String($bytes)
+    $body   = @{ model = $Model; prompt = $Prompt; images = @($base64); stream = $false } | ConvertTo-Json -Depth 4
+    try {
+        $r = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST `
+             -Body $body -ContentType "application/json" -TimeoutSec $TimeoutSec -ErrorAction Stop
+        return $r.response
+    } catch { return $null }
+}
+
+# Strip markdown code fences models often add despite being told not to
+function Remove-CodeFences {
+    param([string]$Raw)
+    if ([string]::IsNullOrWhiteSpace($Raw)) { return $Raw }
+    $c = $Raw.Trim()
+    # Remove opening fence (```html, ```jsx, ```vue, ``` etc.)
+    $c = $c -replace '(?s)^```[a-zA-Z]*\r?\n', ''
+    # Remove closing fence
+    $c = $c -replace '\r?\n```\s*$', ''
+    # If fences are still present, extract the largest block
+    if ($c -match '(?s)```[a-zA-Z]*\r?\n(.+?)\r?\n```') { $c = $matches[1] }
+    return $c.Trim()
+}
+
+# -----------------------------
+# Framework system prompts
+# -----------------------------
+$UISystemPrompts = @{
+    "html" = @"
+You are an expert frontend developer. Generate a complete, self-contained HTML file.
+STRICT RULES:
+- Use Tailwind CSS via CDN: <script src="https://cdn.tailwindcss.com"></script>
+- Output ONLY raw HTML starting with <!DOCTYPE html> and ending with </html>
+- Do NOT include markdown code fences, explanations, or any text outside the HTML
+- Design must be modern, polished, responsive, and visually impressive
+- Use a dark or clean light color palette with good contrast
+- Include hover states, transitions, and realistic placeholder content
+"@
+    "react" = @"
+You are an expert React developer. Generate a complete React functional component using Tailwind CSS.
+STRICT RULES:
+- Output ONLY the component code — no explanations, no markdown fences
+- Start with import statements, end with export default
+- Use only React and standard browser APIs (no external UI libs)
+- Use Tailwind CSS classes for all styling
+- Include useState/useEffect where appropriate
+- Use realistic placeholder data and polished UI
+"@
+    "vue" = @"
+You are an expert Vue 3 developer. Generate a complete single-file Vue component (.vue).
+STRICT RULES:
+- Output ONLY the .vue file content — no markdown fences, no explanations
+- Use <template>, <script setup>, and <style scoped> sections
+- Use Tailwind CSS for styling (assume it is configured)
+- Use Composition API with <script setup>
+- Include realistic placeholder data and polished UI
+"@
+}
+
+# -----------------------------
+# Live Preview Server
+# -----------------------------
+function Start-LivePreviewServer {
+    Show-Header
+    Write-Info "Live Preview Server — http://localhost:$Global:PreviewPort"
+    Write-Host ""
+
+    # Check if already listening
+    $listening = netstat -ano 2>$null | Select-String ":$Global:PreviewPort\s"
+    if ($listening) {
+        Write-OK "Preview server already running on port $Global:PreviewPort"
+        $open = Read-Host "Open in browser? (Enter=yes / N=skip)"
+        if ($open -ne "N" -and $open -ne "n") { Start-Process "http://localhost:$Global:PreviewPort" }
+        Pause-Menu; return
+    }
+
+    New-Item -ItemType Directory -Path "$PSScriptRoot\CHAMP-Sessions" -Force | Out-Null
+    $previewFile = $Global:PreviewFile
+    $port        = $Global:PreviewPort
+
+    # Build the server script as a base64-encoded command so it survives quoting
+    $serverCode = @"
+`$port = $port
+`$file = '$previewFile'
+`$listener = New-Object System.Net.HttpListener
+`$listener.Prefixes.Add("http://localhost:`$port/")
+`$listener.Start()
+Write-Host "CHAMP Preview Server on http://localhost:`$port  (close this window to stop)"
+while (`$listener.IsListening) {
+    try {
+        `$ctx = `$listener.GetContext()
+        if (Test-Path `$file) {
+            `$html = Get-Content `$file -Raw -Encoding UTF8
+            `$inject = '<script>setInterval(()=>{fetch(location.href).then(r=>r.text()).then(t=>{if(t!==document.documentElement.outerHTML)location.reload()})},1500)</script>'
+            `$html = `$html -replace '</body>',"`$inject</body>"
+        } else {
+            `$html = '<!DOCTYPE html><html><head><meta charset=UTF-8><script src=https://cdn.tailwindcss.com></script></head><body class="bg-gray-950 text-gray-400 flex items-center justify-center h-screen flex-col gap-4"><div class="text-5xl">⚡</div><h1 class="text-2xl font-bold text-white">CHAMP AI Preview</h1><p>Waiting for UI generation...</p><script>setInterval(()=>location.reload(),2000)</script></body></html>'
+        }
+        `$bytes = [System.Text.Encoding]::UTF8.GetBytes(`$html)
+        `$ctx.Response.ContentType = "text/html; charset=utf-8"
+        `$ctx.Response.ContentLength64 = `$bytes.Length
+        `$ctx.Response.OutputStream.Write(`$bytes, 0, `$bytes.Length)
+        `$ctx.Response.OutputStream.Close()
+    } catch {}
+}
+"@
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($serverCode))
+    Start-Process pwsh -ArgumentList "-NoProfile -WindowStyle Minimized -EncodedCommand $encoded"
+    Start-Sleep -Milliseconds 800
+
+    Write-OK "Preview server started on http://localhost:$port"
+    Write-Host "The server window runs minimized. Close it to stop the server." -ForegroundColor DarkGray
+    Write-Host ""
+    Start-Process "http://localhost:$port"
+    Write-ActivityLog "Live Preview Server started on port $port"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Stop-LivePreviewServer {
+    Show-Header
+    # Find and kill the pwsh process listening on the preview port
+    $pid = netstat -ano 2>$null | Select-String ":$Global:PreviewPort\s" | ForEach-Object {
+        if ($_ -match '\s(\d+)$') { $matches[1] }
+    } | Select-Object -First 1
+
+    if ($pid) {
+        Stop-Process -Id ([int]$pid) -Force -ErrorAction SilentlyContinue
+        Write-OK "Preview server stopped."
+        Write-ActivityLog "Live Preview Server stopped"
+        Play-SuccessSound
+    } else {
+        Write-Warn "No preview server found running on port $Global:PreviewPort"
+    }
+    Pause-Menu
+}
+
+# -----------------------------
+# UI Code Generator
+# -----------------------------
+function New-UIGeneration {
+    param([string]$InitialPrompt = "")
+    Show-Header
+    Write-Info "UI Code Generator"
+    Write-Info "-----------------"
+    Write-Host ""
+
+    if (-not (Test-CommandExists "ollama")) { Speak-CHAMP "Ollama not found."; Play-ErrorSound; Pause-Menu; return }
+
+    # Framework selection
+    Write-Host "Framework:"
+    Write-Host "  1. HTML + Tailwind CSS    (opens directly in browser, easiest)"
+    Write-Host "  2. React component        (JSX — paste into your project)"
+    Write-Host "  3. Vue 3 component        (.vue SFC)"
+    $fsel = Read-Host "Select framework (Enter for HTML)"
+    $framework = switch ($fsel) {
+        "2" { "react" }
+        "3" { "vue" }
+        default { "html" }
+    }
+    $Global:LastGeneratedFramework = $framework
+
+    # Model selection — Forge is best for code
+    $model = $Agents["Forge"].Model
+    Write-Host ""
+    Write-Host "Using Forge ($model) for generation"
+    Write-Host ""
+
+    $prompt = if (-not [string]::IsNullOrWhiteSpace($InitialPrompt)) { $InitialPrompt } else {
+        Read-Host "Describe the UI you want to build"
+    }
+    if ([string]::IsNullOrWhiteSpace($prompt)) { Speak-CHAMP "No prompt."; Pause-Menu; return }
+
+    Write-Host ""
+    Write-Info "Generating $framework UI via Forge..."
+    $startTime = Get-Date
+    $raw = Invoke-OllamaWithSystem -Model $model -SystemPrompt $UISystemPrompts[$framework] -UserPrompt $prompt -TimeoutSec 240
+
+    if (-not $raw) { Write-Err "Generation failed. Is Ollama running and Forge model pulled?"; Play-ErrorSound; Pause-Menu; return }
+
+    $code    = Remove-CodeFences $raw
+    $elapsed = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
+    $Global:LastGeneratedCode = $code
+
+    # Save
+    New-Item -ItemType Directory -Path "$PSScriptRoot\CHAMP-Sessions" -Force | Out-Null
+    $ext      = if ($framework -eq "react") { "jsx" } elseif ($framework -eq "vue") { "vue" } else { "html" }
+    $outFile  = "$PSScriptRoot\CHAMP-Sessions\ui-$(Get-Date -Format 'yyyyMMdd-HHmmss').$ext"
+
+    Set-Content -Path $outFile -Value $code -Encoding UTF8
+
+    # Also write to the live preview file (HTML only for instant preview)
+    if ($framework -eq "html") {
+        Set-Content -Path $Global:PreviewFile -Value $code -Encoding UTF8
+    }
+
+    Write-OK "Generated in ${elapsed}s — saved to: $outFile"
+    Write-ActivityLog "UI generated: $framework  prompt='$prompt'  file=$outFile"
+
+    # Open options
+    Write-Host ""
+    Write-Host "1. Open in browser now    (HTML only)"
+    Write-Host "2. Open in VS Code"
+    Write-Host "3. Open Live Preview      (auto-refreshes on each generation)"
+    Write-Host "4. Continue to Refine     (iterative loop)"
+    Write-Host "5. Done"
+    $action = Read-Host "Action"
+    switch ($action) {
+        "1" {
+            if ($framework -eq "html") { Start-Process $outFile }
+            else { Write-Warn "$framework files need a dev server to preview." }
+        }
+        "2" { if (Test-CommandExists "code") { code $outFile } else { Start-Process notepad $outFile } }
+        "3" {
+            # Start server if not running
+            $listening = netstat -ano 2>$null | Select-String ":$Global:PreviewPort\s"
+            if (-not $listening) {
+                if ($framework -eq "html") {
+                    $enc = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes(
+                        "`$l=New-Object System.Net.HttpListener;`$l.Prefixes.Add('http://localhost:$Global:PreviewPort/');`$l.Start();Write-Host 'Preview on port $Global:PreviewPort';while(`$l.IsListening){try{`$c=`$l.GetContext();`$h=Get-Content '$Global:PreviewFile' -Raw -Encoding UTF8;`$inj='<script>setInterval(()=>{fetch(location.href).then(r=>r.text()).then(t=>{if(t!==document.documentElement.outerHTML)location.reload()})},1500)</script>';`$h=`$h -replace '</body>',`"`$inj</body>`";`$b=[System.Text.Encoding]::UTF8.GetBytes(`$h);`$c.Response.ContentType='text/html; charset=utf-8';`$c.Response.ContentLength64=`$b.Length;`$c.Response.OutputStream.Write(`$b,0,`$b.Length);`$c.Response.OutputStream.Close()}catch{}}"
+                    ))
+                    Start-Process pwsh -ArgumentList "-NoProfile -WindowStyle Minimized -EncodedCommand $enc"
+                    Start-Sleep -Milliseconds 600
+                }
+            }
+            Start-Process "http://localhost:$Global:PreviewPort"
+        }
+        "4" { Invoke-RefinementLoop }
+    }
+
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# -----------------------------
+# Iterative Refinement Loop
+# -----------------------------
+function Invoke-RefinementLoop {
+    Show-Header
+    Write-Info "Iterative Refinement Loop"
+    Write-Info "-------------------------"
+
+    if ([string]::IsNullOrWhiteSpace($Global:LastGeneratedCode)) {
+        Write-Warn "No previous generation found. Run UI Code Generator first."
+        Pause-Menu; return
+    }
+
+    $model     = $Agents["Forge"].Model
+    $framework = $Global:LastGeneratedFramework
+    $code      = $Global:LastGeneratedCode
+    $iteration = 1
+
+    Write-OK "Loaded last $framework generation ($([math]::Round($code.Length/1KB,1)) KB)"
+    Write-Host "Type a refinement instruction at each step. Type 'done' to finish." -ForegroundColor DarkGray
+    Write-Host ""
+
+    do {
+        Write-Host "[$iteration] Refinement" -ForegroundColor Yellow
+        $refinement = Read-Host "Instruction (or 'done')"
+        if ($refinement -eq "done" -or [string]::IsNullOrWhiteSpace($refinement)) { break }
+
+        # Keep code under ~6000 chars to avoid context overflow on 7B models
+        $codeSnippet = if ($code.Length -gt 6000) { $code.Substring(0, 6000) + "`n... (truncated)" } else { $code }
+
+        $refinementPrompt = @"
+Here is the current $framework code:
+
+$codeSnippet
+
+User request: $refinement
+
+Return the complete updated $framework code only. Apply the change precisely. Do not explain anything.
+"@
+        Write-Info "Refining..."
+        $startTime = Get-Date
+        $raw = Invoke-OllamaWithSystem -Model $model -SystemPrompt $UISystemPrompts[$framework] -UserPrompt $refinementPrompt -TimeoutSec 240
+
+        if (-not $raw) { Write-Err "Refinement failed."; Play-ErrorSound; continue }
+
+        $code    = Remove-CodeFences $raw
+        $elapsed = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
+        $Global:LastGeneratedCode = $code
+
+        # Save and update preview
+        New-Item -ItemType Directory -Path "$PSScriptRoot\CHAMP-Sessions" -Force | Out-Null
+        $ext     = if ($framework -eq "react") { "jsx" } elseif ($framework -eq "vue") { "vue" } else { "html" }
+        $outFile = "$PSScriptRoot\CHAMP-Sessions\ui-refine-$iteration-$(Get-Date -Format 'HHmmss').$ext"
+        Set-Content -Path $outFile -Value $code -Encoding UTF8
+        if ($framework -eq "html") { Set-Content -Path $Global:PreviewFile -Value $code -Encoding UTF8 }
+
+        Write-OK "Iteration $iteration done in ${elapsed}s — saved: $outFile"
+        Write-ActivityLog "UI refined: iteration $iteration  instruction='$refinement'"
+        Play-SuccessSound
+        $iteration++
+
+    } while ($true)
+
+    Write-Host ""
+    Write-OK "Refinement complete. Final version: $([math]::Round($Global:LastGeneratedCode.Length/1KB,1)) KB"
+
+    $open = Read-Host "Open final file in VS Code? (Enter=yes / N=skip)"
+    if ($open -ne "N" -and $open -ne "n") {
+        if (Test-CommandExists "code") { code $outFile } else { Start-Process notepad $outFile }
+    }
+    Pause-Menu
+}
+
+# -----------------------------
+# Scout Vision Agent
+# -----------------------------
+function Activate-Scout {
+    Show-Header
+    Write-Info "Scout — Vision Agent  (llava:7b)"
+    Write-Info "--------------------------------"
+    Write-Host ""
+
+    $model = $Agents["Scout"].Model
+
+    # Check model is pulled
+    $modelList = ollama list 2>&1
+    if ($modelList -notmatch [regex]::Escape($model.Split(":")[0])) {
+        Write-Warn "Scout model '$model' is not installed."
+        $pull = Read-Host "Pull it now? (~4.5 GB) (Enter=yes / N=cancel)"
+        if ($pull -eq "N" -or $pull -eq "n") { Pause-Menu; return }
+        Write-Info "Pulling $model ..."
+        ollama pull $model
+        if ($LASTEXITCODE -ne 0) { Write-Err "Pull failed."; Play-ErrorSound; Pause-Menu; return }
+        Send-ToastNotification "CHAMP AI" "Scout (llava:7b) ready."
+    }
+
+    if (-not (Test-OllamaRunning)) {
+        Start-Process "ollama" -ArgumentList "serve" -WindowStyle Minimized; Start-Sleep 3
+    }
+
+    Write-Host "Scout modes:"
+    Write-Host "  1. Describe an image"
+    Write-Host "  2. Convert screenshot to HTML + Tailwind UI"
+    Write-Host "  3. Analyse a diagram or chart"
+    Write-Host "  4. Ask any question about an image"
+    Write-Host "  5. Back"
+    Write-Host ""
+    $mode = Read-Host "Select mode"
+    if ($mode -eq "5") { return }
+
+    $imagePath = Read-Host "Image file path (full path, e.g. C:\Users\you\screenshot.png)"
+    if (-not (Test-Path $imagePath)) { Write-Err "File not found: $imagePath"; Play-ErrorSound; Pause-Menu; return }
+
+    $ext = [System.IO.Path]::GetExtension($imagePath).ToLower()
+    if ($ext -notin @(".png",".jpg",".jpeg",".gif",".bmp",".webp")) {
+        Write-Err "Unsupported image format. Use PNG, JPG, JPEG, GIF, BMP, or WEBP."
+        Play-ErrorSound; Pause-Menu; return
+    }
+
+    $prompt = switch ($mode) {
+        "1" { "Describe this image in detail. Include layout, colors, content, and any text visible." }
+        "2" { "Convert this UI screenshot into a complete, self-contained HTML file using Tailwind CSS via CDN. Recreate the layout, colors, typography, and structure as accurately as possible. Output ONLY the raw HTML starting with <!DOCTYPE html>." }
+        "3" { "Analyse this diagram or chart. Explain what it shows, identify key data points, trends, or relationships, and summarise the main insight." }
+        "4" {
+            $q = Read-Host "Your question about the image"
+            if ([string]::IsNullOrWhiteSpace($q)) { "Describe what you see in this image." } else { $q }
+        }
+        default { "Describe this image." }
+    }
+
+    Write-Host ""
+    Write-Info "Scout is analysing the image..."
+    $startTime = Get-Date
+    $response  = Invoke-OllamaVision -Model $model -Prompt $prompt -ImagePath $imagePath -TimeoutSec 300
+
+    if (-not $response) { Write-Err "Vision query failed. Ensure llava:7b is pulled and Ollama is running."; Play-ErrorSound; Pause-Menu; return }
+
+    $elapsed = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
+    $code    = Remove-CodeFences $response
+
+    Write-Host ""
+    Write-Info "--- Scout Response (${elapsed}s) ---"
+    Write-Host $code
+    Write-Info "--- end ---"
+
+    # If mode 2, save as HTML and offer preview
+    if ($mode -eq "2") {
+        New-Item -ItemType Directory -Path "$PSScriptRoot\CHAMP-Sessions" -Force | Out-Null
+        $outFile = "$PSScriptRoot\CHAMP-Sessions\scout-ui-$(Get-Date -Format 'yyyyMMdd-HHmmss').html"
+        Set-Content -Path $outFile -Value $code -Encoding UTF8
+        Set-Content -Path $Global:PreviewFile -Value $code -Encoding UTF8
+        $Global:LastGeneratedCode      = $code
+        $Global:LastGeneratedFramework = "html"
+        Write-OK "Saved: $outFile"
+
+        $open = Read-Host "Open in browser? (Enter=yes / N=skip)"
+        if ($open -ne "N" -and $open -ne "n") { Start-Process $outFile }
+
+        $refine = Read-Host "Refine it further? (Enter=yes / N=skip)"
+        if ($refine -ne "N" -and $refine -ne "n") { Invoke-RefinementLoop }
+    } else {
+        # Save response as markdown
+        $outFile = "$PSScriptRoot\CHAMP-Sessions\scout-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+        $md = "# Scout Vision Analysis`n`n**Date:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  |  **Elapsed:** ${elapsed}s`n`n**Image:** $imagePath`n`n---`n`n$response"
+        Set-Content -Path $outFile -Value $md -Encoding UTF8
+        Write-OK "Saved: $outFile"
+
+        $open = Read-Host "Open in VS Code? (Enter=yes / N=skip)"
+        if ($open -ne "N" -and $open -ne "n") {
+            if (Test-CommandExists "code") { code $outFile } else { Start-Process notepad $outFile }
+        }
+    }
+
+    Write-ActivityLog "Scout vision: mode=$mode  image=$imagePath  elapsed=${elapsed}s"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+# UI Generation Studio menu
+function Show-UIStudioMenu {
+    Show-Header
+    Write-Info "UI Generation Studio"
+    Write-Info "--------------------"
+    Write-Host "1. Generate UI            (prompt → HTML / React / Vue)"
+    Write-Host "2. Refine Last Generation (iterative loop)"
+    Write-Host "3. Scout Vision Agent     (image describe / screenshot → UI)"
+    Write-Host "4. Start Live Preview     (auto-refresh server on port $Global:PreviewPort)"
+    Write-Host "5. Stop Live Preview"
+    Write-Host "6. Open Preview in Browser"
+    Write-Host "7. Back"
+    Write-Host ""
+    if ($Global:LastGeneratedCode) {
+        Write-Host "Last generation: $Global:LastGeneratedFramework  $([math]::Round($Global:LastGeneratedCode.Length/1KB,1)) KB" -ForegroundColor DarkGray
+    }
+}
+
+function UIStudio-Menu {
+    do {
+        Show-UIStudioMenu
+        $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { New-UIGeneration }
+            "2" { Invoke-RefinementLoop }
+            "3" { Activate-Scout }
+            "4" { Start-LivePreviewServer }
+            "5" { Stop-LivePreviewServer }
+            "6" {
+                $listening = netstat -ano 2>$null | Select-String ":$Global:PreviewPort\s"
+                if ($listening) { Start-Process "http://localhost:$Global:PreviewPort" }
+                else { Write-Warn "Preview server is not running. Start it first (option 4)."; Pause-Menu }
+            }
+            "7" { return }
+            default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "7")
+}
+
+# -----------------------------
+# AI Dev Tools Menu
+# -----------------------------
+function Show-AIDevMenu {
+    Show-Header
+    Write-Info "AI Development Tools"
+    Write-Info "--------------------"
+    Write-Host "--- Core Tools ---" -ForegroundColor DarkGray
+    Write-Host "1.  GPU / Hardware Monitor"
+    Write-Host "2.  Modelfile Creator         (build custom agent with system prompt)"
+    Write-Host "3.  Model Benchmark           (latency + tokens/sec)"
+    Write-Host "4.  Prompt Library            (save & reuse prompts)"
+    Write-Host "5.  Agent Chain Pipeline      (A -> B response routing)"
+    Write-Host "6.  Multi-Model Comparison    (same prompt, multiple agents)"
+    Write-Host "7.  Session Export            (save response to .md / .txt)"
+    Write-Host ""
+    Write-Host "--- Environment ---" -ForegroundColor DarkGray
+    Write-Host "8.  Python AI Env Wizard      (venv + AI packages)"
+    Write-Host "9.  Jupyter Launcher"
+    Write-Host "10. Docker Compose Generator  (full AI stack)"
+    Write-Host "11. Windows Terminal Profile  (install CHAMP AI tab)"
+    Write-Host ""
+    Write-Host "--- Models & APIs ---" -ForegroundColor DarkGray
+    Write-Host "12. Ollama Model Search       (browse & pull from library)"
+    Write-Host "13. Model Disk Manager        (list sizes, delete models)"
+    Write-Host "14. RAM / VRAM Advisor        (check model compatibility)"
+    Write-Host "15. Ollama REST API Tester"
+    Write-Host "16. AI Services Port Dashboard"
+    Write-Host "17. API Key Manager           (.env)"
+    Write-Host ""
+    Write-Host "--- Data & Scheduling ---" -ForegroundColor DarkGray
+    Write-Host "18. Backup & Restore"
+    Write-Host "19. Scheduled Agent Queries   (Windows Task Scheduler)"
+    Write-Host ""
+    Write-Host "--- UI Generation ---" -ForegroundColor DarkGray
+    Write-Host "20. UI Generation Studio" -ForegroundColor Cyan
+    Write-Host "    Generate UI, live preview, refine, Scout vision" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "21. Back"
+}
+
+function AIDevTools-Menu {
+    do {
+        Show-AIDevMenu
+        $choice = Read-Host "Select"
+        switch ($choice) {
+            "1"  { Show-HardwareMonitor }
+            "2"  { New-AgentModelfile }
+            "3"  { Benchmark-Model }
+            "4"  { Manage-PromptLibrary }
+            "5"  { Run-AgentChain }
+            "6"  { Compare-Models }
+            "7"  { Export-AgentSession }
+            "8"  { Setup-PythonAIEnv }
+            "9"  { Launch-Jupyter }
+            "10" { New-DockerComposeStack }
+            "11" { Install-WindowsTerminalProfile }
+            "12" { Search-OllamaModels }
+            "13" { Manage-ModelDisk }
+            "14" { Show-ModelAdvisor }
+            "15" { Test-OllamaAPI }
+            "16" { Show-PortDashboard }
+            "17" { Manage-APIKeys }
+            "18" { Backup-Menu }
+            "19" { Manage-ScheduledQueries }
+            "20" { UIStudio-Menu }
+            "21" { return }
+            default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "21")
+}
+
+# ============================================================
+# DEVOPS CONTROL PANEL
+# ============================================================
+
+$DevOpsConfigPath = "$PSScriptRoot\.devops-config.json"
+
+function Get-DevOpsConfig {
+    if (Test-Path $DevOpsConfigPath) {
+        try { return Get-Content $DevOpsConfigPath -Raw | ConvertFrom-Json -AsHashtable }
+        catch { return @{} }
+    }
+    return @{}
+}
+
+function Save-DevOpsConfig {
+    param([hashtable]$Config)
+    $Config | ConvertTo-Json -Depth 4 | Set-Content $DevOpsConfigPath -Encoding UTF8
+}
+
+function Get-EnvValue {
+    param([string]$Key)
+    if (Test-Path $EnvFilePath) {
+        $line = Get-Content $EnvFilePath | Where-Object { $_ -match "^$Key=" } | Select-Object -First 1
+        if ($line) { return ($line -split "=", 2)[1].Trim() }
+    }
+    return $null
+}
+
+function Set-EnvValue {
+    param([string]$Key, [string]$Value)
+    $lines = @()
+    if (Test-Path $EnvFilePath) {
+        $lines = Get-Content $EnvFilePath | Where-Object { $_ -notmatch "^$Key=" }
+    }
+    $lines += "$Key=$Value"
+    Set-Content $EnvFilePath -Value $lines -Encoding UTF8
+}
+
+# ============================================================
+# PROXMOX
+# ============================================================
+
+function Invoke-ProxmoxAPI {
+    param(
+        [string]$Endpoint,
+        [string]$Method = "GET",
+        [hashtable]$Body = @{}
+    )
+    $cfg     = Get-DevOpsConfig
+    $host    = $cfg["PVE_HOST"]
+    $tokenId = Get-EnvValue "PVE_TOKEN_ID"
+    $secret  = Get-EnvValue "PVE_TOKEN_SECRET"
+
+    if (-not $host -or -not $tokenId -or -not $secret) {
+        Write-Err "Proxmox not configured. Run Proxmox Setup first."
+        return $null
+    }
+
+    $uri     = "https://${host}:8006/api2/json$Endpoint"
+    $headers = @{ Authorization = "PVEAPIToken=${tokenId}=${secret}" }
+
+    try {
+        if ($Method -eq "GET") {
+            $r = Invoke-RestMethod -Uri $uri -Headers $headers -Method GET -SkipCertificateCheck -TimeoutSec 15 -ErrorAction Stop
+        } else {
+            $r = Invoke-RestMethod -Uri $uri -Headers $headers -Method $Method -Body $Body `
+                 -SkipCertificateCheck -TimeoutSec 30 -ErrorAction Stop
+        }
+        return $r.data
+    } catch {
+        Write-Err "Proxmox API error: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Setup-Proxmox {
+    Show-Header
+    Write-Info "Proxmox Setup"
+    Write-Info "-------------"
+    Write-Host "You need a Proxmox API token: Datacenter → Permissions → API Tokens"
+    Write-Host ""
+    $cfg = Get-DevOpsConfig
+
+    $host = Read-Host "Proxmox host/IP (e.g. 192.168.1.10)"
+    if ([string]::IsNullOrWhiteSpace($host)) { Pause-Menu; return }
+    $cfg["PVE_HOST"] = $host
+
+    $tokenId = Read-Host "Token ID (format: user@realm!tokenname, e.g. root@pam!champ)"
+    Set-EnvValue "PVE_TOKEN_ID" $tokenId
+
+    $secret = Read-Host "Token Secret (UUID)"
+    Set-EnvValue "PVE_TOKEN_SECRET" $secret
+
+    Save-DevOpsConfig $cfg
+    Write-OK "Proxmox config saved. Testing connection..."
+
+    $nodes = Invoke-ProxmoxAPI "/nodes"
+    if ($nodes) { Write-OK "Connected! Found $($nodes.Count) node(s)."; Play-SuccessSound }
+    else { Write-Err "Connection failed. Check host, token ID, and secret."; Play-ErrorSound }
+    Pause-Menu
+}
+
+function Show-ProxmoxDashboard {
+    Show-Header
+    Write-Info "Proxmox Dashboard"
+    Write-Info "-----------------"
+
+    $nodes = Invoke-ProxmoxAPI "/nodes"
+    if (-not $nodes) { Pause-Menu; return }
+
+    foreach ($node in $nodes) {
+        $cpuPct  = [math]::Round($node.cpu * 100, 1)
+        $ramGB   = [math]::Round($node.mem / 1GB, 1)
+        $maxRAM  = [math]::Round($node.maxmem / 1GB, 1)
+        $diskGB  = [math]::Round($node.disk / 1GB, 1)
+        $maxDisk = [math]::Round($node.maxdisk / 1GB, 1)
+        $upDays  = [math]::Round($node.uptime / 86400, 1)
+
+        Write-Host ""
+        Write-Host "Node: $($node.node)" -ForegroundColor Yellow
+        if ($node.status -eq "online") { Write-OK  "  Status : $($node.status)  (up $upDays days)" }
+        else                            { Write-Err "  Status : $($node.status)" }
+        if ($cpuPct -gt 80) { Write-Warn "  CPU    : $cpuPct%" } else { Write-OK "  CPU    : $cpuPct%" }
+        Write-Host "  RAM    : $ramGB GB / $maxRAM GB"
+        Write-Host "  Disk   : $diskGB GB / $maxDisk GB"
+    }
+    Pause-Menu
+}
+
+function Show-ProxmoxVMs {
+    Show-Header
+    Write-Info "Proxmox VMs & Containers"
+    Write-Info "------------------------"
+
+    $nodes = Invoke-ProxmoxAPI "/nodes"
+    if (-not $nodes) { Pause-Menu; return }
+
+    $allVMs = @()
+    foreach ($node in $nodes) {
+        $vms = Invoke-ProxmoxAPI "/nodes/$($node.node)/qemu"
+        $cts = Invoke-ProxmoxAPI "/nodes/$($node.node)/lxc"
+        if ($vms) { $vms | ForEach-Object { $_ | Add-Member -NotePropertyName node -NotePropertyValue $node.node -Force; $_ | Add-Member -NotePropertyName type -NotePropertyValue "VM" -Force; $allVMs += $_ } }
+        if ($cts) { $cts | ForEach-Object { $_ | Add-Member -NotePropertyName node -NotePropertyValue $node.node -Force; $_ | Add-Member -NotePropertyName type -NotePropertyValue "CT" -Force; $allVMs += $_ } }
+    }
+
+    if (-not $allVMs) { Write-Warn "No VMs or containers found."; Pause-Menu; return }
+
+    $i = 1
+    foreach ($vm in $allVMs | Sort-Object vmid) {
+        $ramMB = if ($vm.mem) { [math]::Round($vm.mem / 1MB, 0) } else { 0 }
+        $cpuPct = if ($vm.cpu) { [math]::Round($vm.cpu * 100, 1) } else { 0 }
+        $statusColor = if ($vm.status -eq "running") { "Green" } else { "DarkGray" }
+        Write-Host "$i. [$($vm.type)] " -NoNewline
+        Write-Host "$($vm.vmid.ToString().PadRight(6))" -NoNewline -ForegroundColor Cyan
+        Write-Host "$($vm.name.PadRight(25))" -NoNewline
+        Write-Host "$($vm.status.PadRight(12))" -NoNewline -ForegroundColor $statusColor
+        Write-Host "Node: $($vm.node)  CPU: $cpuPct%  RAM: $ramMB MB"
+        $i++
+    }
+
+    Write-Host ""
+    Write-Host "Actions: S=Start  X=Stop  R=Reboot  N=Snapshot  B=Back"
+    $action = Read-Host "Action (or Enter to go back)"
+    if ([string]::IsNullOrWhiteSpace($action) -or $action -eq "B" -or $action -eq "b") { return }
+
+    $vmIdx = Read-Host "VM/CT number"
+    if (-not ($vmIdx -match '^\d+$')) { return }
+    $target = $allVMs[([int]$vmIdx - 1)]
+    if (-not $target) { Write-Err "Invalid selection."; Pause-Menu; return }
+
+    $vmType = if ($target.type -eq "VM") { "qemu" } else { "lxc" }
+
+    switch ($action.ToUpper()) {
+        "S" {
+            Invoke-ProxmoxAPI "/nodes/$($target.node)/$vmType/$($target.vmid)/status/start" -Method POST
+            Write-OK "Start command sent for $($target.name)"
+            Write-ActivityLog "Proxmox: started $($target.type) $($target.vmid) $($target.name)"
+        }
+        "X" {
+            $confirm = Read-Host "Stop $($target.name)? (YES)"
+            if ($confirm -eq "YES") {
+                Invoke-ProxmoxAPI "/nodes/$($target.node)/$vmType/$($target.vmid)/status/stop" -Method POST
+                Write-OK "Stop command sent."
+                Write-ActivityLog "Proxmox: stopped $($target.type) $($target.vmid) $($target.name)"
+            }
+        }
+        "R" {
+            Invoke-ProxmoxAPI "/nodes/$($target.node)/$vmType/$($target.vmid)/status/reboot" -Method POST
+            Write-OK "Reboot command sent for $($target.name)"
+            Write-ActivityLog "Proxmox: rebooted $($target.type) $($target.vmid) $($target.name)"
+        }
+        "N" {
+            $snapName = Read-Host "Snapshot name"
+            $snapDesc = Read-Host "Description (optional)"
+            Invoke-ProxmoxAPI "/nodes/$($target.node)/$vmType/$($target.vmid)/snapshot" -Method POST `
+                -Body @{ snapname = $snapName; description = $snapDesc }
+            Write-OK "Snapshot '$snapName' queued for $($target.name)"
+            Write-ActivityLog "Proxmox: snapshot $snapName on $($target.vmid)"
+        }
+    }
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Show-ProxmoxStorage {
+    Show-Header
+    Write-Info "Proxmox Storage"
+    Write-Info "---------------"
+    $nodes = Invoke-ProxmoxAPI "/nodes"
+    if (-not $nodes) { Pause-Menu; return }
+    foreach ($node in $nodes) {
+        Write-Host "Node: $($node.node)" -ForegroundColor Yellow
+        $storages = Invoke-ProxmoxAPI "/nodes/$($node.node)/storage"
+        if ($storages) {
+            foreach ($s in $storages) {
+                $usedGB  = [math]::Round($s.used  / 1GB, 1)
+                $totalGB = [math]::Round($s.total / 1GB, 1)
+                $pct     = if ($s.total -gt 0) { [math]::Round(($s.used / $s.total) * 100, 0) } else { 0 }
+                $line    = "  $($s.storage.PadRight(20)) $($s.type.PadRight(10)) $usedGB GB / $totalGB GB  ($pct%)"
+                if ($pct -gt 85) { Write-Warn $line } else { Write-OK $line }
+            }
+        }
+    }
+    Pause-Menu
+}
+
+function Invoke-ProxmoxAI {
+    Show-Header
+    Write-Info "Proxmox AI Assistant"
+    Write-Host ""
+    Write-Host "Ask Professor-X about your infrastructure or have Forge generate configs."
+    Write-Host ""
+    Write-Host "1. Ask Professor-X about Proxmox architecture / planning"
+    Write-Host "2. Forge generates a cloud-init config"
+    Write-Host "3. Forge generates a Terraform Proxmox provider block"
+    Write-Host "4. Back"
+    $choice = Read-Host "Select"
+    switch ($choice) {
+        "1" {
+            $q = Read-Host "Your Proxmox question"
+            $system = "You are a Proxmox VE expert. Answer concisely and accurately about Proxmox hypervisor, clusters, VMs, LXC containers, storage, networking, and high availability."
+            $r = Invoke-OllamaWithSystem -Model $Agents["Professor-X"].Model -SystemPrompt $system -UserPrompt $q
+            Write-Host ""; Write-Host $r
+        }
+        "2" {
+            $desc = Read-Host "Describe the server role (e.g. 'Ubuntu 22.04 Docker host with 4 vCPUs, 8GB RAM')"
+            $system = "You are a DevOps expert. Generate a complete Proxmox cloud-init YAML config. Output only the YAML, no explanations."
+            $r = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt "Generate cloud-init config for: $desc"
+            $r = Remove-CodeFences $r
+            $out = "$PSScriptRoot\CHAMP-Sessions\cloud-init-$(Get-Date -Format 'yyyyMMdd-HHmmss').yaml"
+            Set-Content $out -Value $r -Encoding UTF8
+            Write-Host ""; Write-Host $r; Write-OK "Saved: $out"
+        }
+        "3" {
+            $cfg = Get-DevOpsConfig
+            $pveHost = if ($cfg["PVE_HOST"]) { $cfg["PVE_HOST"] } else { "YOUR_PROXMOX_IP" }
+            $system = "You are a Terraform and Proxmox expert. Generate a complete Terraform configuration using the bpg/proxmox provider. Output only HCL, no explanations."
+            $desc = Read-Host "Describe the VM to provision"
+            $r = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system `
+                 -UserPrompt "Proxmox host: $pveHost. Generate Terraform HCL to create: $desc"
+            $r = Remove-CodeFences $r
+            $out = "$PSScriptRoot\CHAMP-Sessions\proxmox-tf-$(Get-Date -Format 'yyyyMMdd-HHmmss').tf"
+            Set-Content $out -Value $r -Encoding UTF8
+            Write-Host ""; Write-Host $r; Write-OK "Saved: $out"
+        }
+        "4" { return }
+    }
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function Proxmox-Menu {
+    do {
+        Show-Header
+        Write-Info "Proxmox Control"
+        Write-Info "---------------"
+        Write-Host "1. Dashboard        (nodes, CPU, RAM, disk)"
+        Write-Host "2. VMs & Containers (list, start, stop, reboot, snapshot)"
+        Write-Host "3. Storage          (usage per node)"
+        Write-Host "4. AI Assistant     (Professor-X plans, Forge generates configs)"
+        Write-Host "5. Setup / Reconfigure"
+        Write-Host "6. Back"
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Show-ProxmoxDashboard }
+            "2" { Show-ProxmoxVMs }
+            "3" { Show-ProxmoxStorage }
+            "4" { Invoke-ProxmoxAI }
+            "5" { Setup-Proxmox }
+            "6" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "6")
+}
+
+# ============================================================
+# GITHUB
+# ============================================================
+
+function Test-GitHubCLI { return [bool](Get-Command "gh" -ErrorAction SilentlyContinue) }
+
+function Assert-GitHubAuth {
+    if (-not (Test-GitHubCLI)) {
+        Write-Err "GitHub CLI (gh) not found. Install from https://cli.github.com"
+        return $false
+    }
+    $status = gh auth status 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "Not authenticated. Run: gh auth login"
+        $login = Read-Host "Run gh auth login now? (Enter=yes / N=skip)"
+        if ($login -ne "N" -and $login -ne "n") { gh auth login }
+        return $false
+    }
+    return $true
+}
+
+function Show-GitHubRepos {
+    Show-Header
+    Write-Info "GitHub Repositories"
+    Write-Info "-------------------"
+    if (-not (Assert-GitHubAuth)) { Pause-Menu; return }
+
+    $limit = Read-Host "How many repos to show (Enter for 20)"
+    if (-not ($limit -match '^\d+$')) { $limit = "20" }
+
+    gh repo list --limit $limit --json name,description,language,isPrivate,updatedAt `
+        --template '{{range .}}{{.name | printf "%-35s"}} {{if .isPrivate}}[private]{{else}}[public] {{end}} {{.language | printf "%-15s"}} {{.updatedAt | timeago}}{{"\n"}}{{end}}'
+    Write-Host ""
+    $action = Read-Host "C=Clone  V=View  B=Back"
+    switch ($action.ToUpper()) {
+        "C" {
+            $repo = Read-Host "Repo name or owner/repo"
+            $dest = Read-Host "Clone to (Enter for current dir)"
+            if ([string]::IsNullOrWhiteSpace($dest)) { gh repo clone $repo } else { gh repo clone $repo $dest }
+            Write-ActivityLog "GitHub: cloned $repo"
+            Play-SuccessSound
+        }
+        "V" {
+            $repo = Read-Host "Repo name to open in browser"
+            gh repo view $repo --web
+        }
+    }
+    Pause-Menu
+}
+
+function Show-GitHubIssues {
+    Show-Header
+    Write-Info "GitHub Issues"
+    Write-Info "-------------"
+    if (-not (Assert-GitHubAuth)) { Pause-Menu; return }
+
+    $repo = Read-Host "Repo (owner/repo or Enter for current dir repo)"
+    $repoFlag = if ([string]::IsNullOrWhiteSpace($repo)) { "" } else { "-R $repo" }
+
+    Invoke-Expression "gh issue list $repoFlag --limit 20"
+    Write-Host ""
+    Write-Host "N=New issue    V=View issue    B=Back"
+    $action = Read-Host "Action"
+    switch ($action.ToUpper()) {
+        "N" {
+            $title = Read-Host "Issue title"
+            $useAI = Read-Host "Use Professor-X to draft the body? (Enter=yes / N=no)"
+            $body  = ""
+            if ($useAI -ne "N" -and $useAI -ne "n") {
+                $context = Read-Host "Describe the issue context"
+                $system  = "You are a software engineer. Write a clear, well-structured GitHub issue body with sections: Description, Steps to Reproduce (if applicable), Expected Behavior, Actual Behavior. Be concise."
+                $body    = Invoke-OllamaWithSystem -Model $Agents["Professor-X"].Model -SystemPrompt $system -UserPrompt "Issue title: $title. Context: $context"
+                Write-Host ""; Write-Host $body; Write-Host ""
+            } else {
+                $body = Read-Host "Issue body"
+            }
+            $bodyFile = "$PSScriptRoot\CHAMP-Sessions\issue-body-temp.md"
+            Set-Content $bodyFile -Value $body -Encoding UTF8
+            Invoke-Expression "gh issue create $repoFlag --title '$title' --body-file '$bodyFile'"
+            Remove-Item $bodyFile -Force -ErrorAction SilentlyContinue
+            Write-ActivityLog "GitHub: created issue '$title'"
+            Play-SuccessSound
+        }
+        "V" {
+            $num = Read-Host "Issue number"
+            Invoke-Expression "gh issue view $repoFlag $num"
+        }
+    }
+    Pause-Menu
+}
+
+function Show-GitHubPRs {
+    Show-Header
+    Write-Info "GitHub Pull Requests"
+    Write-Info "--------------------"
+    if (-not (Assert-GitHubAuth)) { Pause-Menu; return }
+
+    $repo = Read-Host "Repo (owner/repo or Enter for current dir)"
+    $repoFlag = if ([string]::IsNullOrWhiteSpace($repo)) { "" } else { "-R $repo" }
+
+    Invoke-Expression "gh pr list $repoFlag --limit 20"
+    Write-Host ""
+    Write-Host "V=View  R=Review with Forge  C=Create  M=Merge  B=Back"
+    $action = Read-Host "Action"
+    switch ($action.ToUpper()) {
+        "V" {
+            $num = Read-Host "PR number"
+            Invoke-Expression "gh pr view $repoFlag $num"
+        }
+        "R" {
+            $num  = Read-Host "PR number to review"
+            Write-Info "Fetching diff..."
+            $diff = Invoke-Expression "gh pr diff $repoFlag $num" 2>&1 | Out-String
+            if ($diff.Length -gt 8000) { $diff = $diff.Substring(0, 8000) + "`n...(truncated)" }
+            $system = "You are a senior software engineer doing a code review. Analyse this git diff and provide: 1) Summary of changes, 2) Potential issues or bugs, 3) Security concerns, 4) Suggestions for improvement. Be specific and actionable."
+            Write-Info "Forge is reviewing the diff..."
+            $review = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt $diff -TimeoutSec 180
+            Write-Host ""; Write-Host $review
+            $save = Read-Host "Save review to file? (Enter=yes)"
+            if ($save -ne "N" -and $save -ne "n") {
+                $out = "$PSScriptRoot\CHAMP-Sessions\pr-review-$num-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+                Set-Content $out -Value "# PR #$num Review`n`n$review" -Encoding UTF8
+                Write-OK "Saved: $out"
+            }
+            Write-ActivityLog "GitHub: Forge reviewed PR #$num"
+        }
+        "C" {
+            $title = Read-Host "PR title"
+            $base  = Read-Host "Base branch (Enter for main)"
+            if ([string]::IsNullOrWhiteSpace($base)) { $base = "main" }
+            $useAI = Read-Host "Use Professor-X to write PR description? (Enter=yes)"
+            $body  = ""
+            if ($useAI -ne "N" -and $useAI -ne "n") {
+                $context = Read-Host "What does this PR do?"
+                $system  = "You are a senior engineer. Write a professional GitHub PR description with: ## Summary (bullet points), ## Changes (what changed and why), ## Testing (how to verify). Be concise."
+                $body    = Invoke-OllamaWithSystem -Model $Agents["Professor-X"].Model -SystemPrompt $system -UserPrompt "PR title: $title. Context: $context"
+                Write-Host ""; Write-Host $body; Write-Host ""
+            }
+            $bodyFile = "$PSScriptRoot\CHAMP-Sessions\pr-body-temp.md"
+            Set-Content $bodyFile -Value $body -Encoding UTF8
+            Invoke-Expression "gh pr create $repoFlag --title '$title' --base $base --body-file '$bodyFile'"
+            Remove-Item $bodyFile -Force -ErrorAction SilentlyContinue
+            Write-ActivityLog "GitHub: created PR '$title'"
+            Play-SuccessSound
+        }
+        "M" {
+            $num = Read-Host "PR number to merge"
+            Invoke-Expression "gh pr merge $repoFlag $num --squash"
+            Write-ActivityLog "GitHub: merged PR #$num"
+            Play-SuccessSound
+        }
+    }
+    Pause-Menu
+}
+
+function Show-GitHubActions {
+    Show-Header
+    Write-Info "GitHub Actions"
+    Write-Info "--------------"
+    if (-not (Assert-GitHubAuth)) { Pause-Menu; return }
+
+    $repo = Read-Host "Repo (owner/repo or Enter for current dir)"
+    $repoFlag = if ([string]::IsNullOrWhiteSpace($repo)) { "" } else { "-R $repo" }
+
+    Write-Info "Recent workflow runs:"
+    Invoke-Expression "gh run list $repoFlag --limit 15"
+    Write-Host ""
+    Write-Host "T=Trigger workflow    W=Watch run    L=View logs    B=Back"
+    $action = Read-Host "Action"
+    switch ($action.ToUpper()) {
+        "T" {
+            Invoke-Expression "gh workflow list $repoFlag"
+            $wf = Read-Host "Workflow name or ID"
+            $br = Read-Host "Branch (Enter for main)"
+            if ([string]::IsNullOrWhiteSpace($br)) { $br = "main" }
+            Invoke-Expression "gh workflow run $repoFlag '$wf' --ref $br"
+            Write-OK "Workflow triggered."
+            Write-ActivityLog "GitHub: triggered workflow '$wf'"
+        }
+        "W" {
+            $runId = Read-Host "Run ID"
+            Invoke-Expression "gh run watch $repoFlag $runId"
+        }
+        "L" {
+            $runId = Read-Host "Run ID"
+            Invoke-Expression "gh run view $repoFlag $runId --log"
+        }
+    }
+    Pause-Menu
+}
+
+function GitHub-Menu {
+    do {
+        Show-Header
+        Write-Info "GitHub Control"
+        Write-Info "--------------"
+        Write-Host "1. Repositories    (list, clone, view)"
+        Write-Host "2. Issues          (list, create with AI body)"
+        Write-Host "3. Pull Requests   (list, create, Forge AI review)"
+        Write-Host "4. Actions         (trigger, watch, logs)"
+        Write-Host "5. Back"
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Show-GitHubRepos }
+            "2" { Show-GitHubIssues }
+            "3" { Show-GitHubPRs }
+            "4" { Show-GitHubActions }
+            "5" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "5")
+}
+
+# ============================================================
+# DOCKER ENHANCED
+# ============================================================
+
+function Show-ContainerLogs {
+    Show-Header
+    Write-Info "Container Logs"
+    if (-not (Test-DockerRunning)) { Write-Err "Docker not running."; Pause-Menu; return }
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+    Write-Host ""
+    $name  = Read-Host "Container name"
+    $lines = Read-Host "Lines to show (Enter for 50)"
+    if (-not ($lines -match '^\d+$')) { $lines = "50" }
+    Write-Host ""
+    docker logs --tail $lines $name
+    Write-Host ""
+    $ai = Read-Host "Analyse logs with Cyclops for errors? (Enter=yes / N=skip)"
+    if ($ai -ne "N" -and $ai -ne "n") {
+        $logText = docker logs --tail 100 $name 2>&1 | Out-String
+        if ($logText.Length -gt 6000) { $logText = $logText.Substring($logText.Length - 6000) }
+        $system = "You are a DevOps engineer. Analyse these container logs. Identify errors, warnings, anomalies, and their likely root causes. Be specific."
+        $r = Invoke-OllamaWithSystem -Model $Agents["Cyclops"].Model -SystemPrompt $system -UserPrompt $logText -TimeoutSec 120
+        Write-Host ""; Write-Info "Cyclops Analysis:"; Write-Host $r
+        Write-ActivityLog "Docker: Cyclops analysed logs for $name"
+    }
+    Pause-Menu
+}
+
+function Show-ContainerStats {
+    Show-Header
+    Write-Info "Container Resource Stats (live — Ctrl+C to stop)"
+    if (-not (Test-DockerRunning)) { Write-Err "Docker not running."; Pause-Menu; return }
+    docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}"
+    Pause-Menu
+}
+
+function Build-DockerImageFromForge {
+    Show-Header
+    Write-Info "Docker Image Builder"
+    Write-Info "--------------------"
+    if (-not (Test-DockerRunning)) { Write-Err "Docker not running."; Pause-Menu; return }
+
+    Write-Host "1. Generate Dockerfile with Forge then build"
+    Write-Host "2. Build from existing Dockerfile"
+    $mode = Read-Host "Select"
+
+    $buildPath = Read-Host "Build context path (Enter for current dir)"
+    if ([string]::IsNullOrWhiteSpace($buildPath)) { $buildPath = "." }
+
+    if ($mode -eq "1") {
+        $desc    = Read-Host "Describe what this image should do"
+        $system  = "You are a Docker expert. Generate a production-quality, multi-stage Dockerfile. Follow best practices: minimal base image, non-root user, layer caching, .dockerignore hints. Output ONLY the Dockerfile content, no explanations."
+        $r       = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt $desc -TimeoutSec 120
+        $dfPath  = "$buildPath\Dockerfile"
+        Set-Content $dfPath -Value (Remove-CodeFences $r) -Encoding UTF8
+        Write-OK "Dockerfile saved: $dfPath"
+        Write-Host ""; Write-Host (Get-Content $dfPath -Raw); Write-Host ""
+        $proceed = Read-Host "Build this image? (Enter=yes / N=edit first)"
+        if ($proceed -eq "N" -or $proceed -eq "n") {
+            if (Test-CommandExists "code") { code $dfPath }
+            Read-Host "Press Enter when ready to build"
+        }
+    }
+
+    $tag = Read-Host "Image tag (e.g. myapp:latest)"
+    if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "champ-build:latest" }
+
+    Write-Info "Building $tag ..."
+    docker build -t $tag $buildPath
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "Build successful: $tag"
+        Write-ActivityLog "Docker: built image $tag"
+        Play-SuccessSound
+        $push = Read-Host "Push to registry? (Enter=yes / N=skip)"
+        if ($push -ne "N" -and $push -ne "n") {
+            docker push $tag
+            Write-ActivityLog "Docker: pushed $tag"
+        }
+    } else { Write-Err "Build failed."; Play-ErrorSound }
+    Pause-Menu
+}
+
+function Manage-DockerVolumes {
+    Show-Header
+    Write-Info "Docker Volumes"
+    if (-not (Test-DockerRunning)) { Write-Err "Docker not running."; Pause-Menu; return }
+    docker volume ls
+    Write-Host ""
+    Write-Host "I=Inspect    D=Delete    B=Back"
+    $action = Read-Host "Action"
+    switch ($action.ToUpper()) {
+        "I" { $v = Read-Host "Volume name"; docker volume inspect $v }
+        "D" {
+            $v = Read-Host "Volume name to delete"
+            Write-Warn "This permanently deletes the volume and its data."
+            $confirm = Read-Host "Type YES to confirm"
+            if ($confirm -eq "YES") { docker volume rm $v; Write-OK "Deleted: $v"; Write-ActivityLog "Docker: deleted volume $v" }
+        }
+    }
+    Pause-Menu
+}
+
+function Manage-DockerNetworks {
+    Show-Header
+    Write-Info "Docker Networks"
+    if (-not (Test-DockerRunning)) { Write-Err "Docker not running."; Pause-Menu; return }
+    docker network ls
+    Write-Host ""
+    $action = Read-Host "I=Inspect    C=Create    D=Delete    B=Back"
+    switch ($action.ToUpper()) {
+        "I" { $n = Read-Host "Network name"; docker network inspect $n }
+        "C" { $n = Read-Host "Network name"; $d = Read-Host "Driver (bridge/overlay, Enter for bridge)"; if ([string]::IsNullOrWhiteSpace($d)) { $d = "bridge" }; docker network create --driver $d $n; Write-OK "Created: $n" }
+        "D" { $n = Read-Host "Network name"; docker network rm $n; Write-OK "Deleted: $n" }
+    }
+    Pause-Menu
+}
+
+function Docker-Menu {
+    do {
+        Show-Header
+        Write-Info "Docker Control"
+        Write-Info "--------------"
+        Write-Host "1.  Container Dashboard    (existing)"
+        Write-Host "2.  Start Open WebUI       (existing)"
+        Write-Host "3.  Container Logs         (+ Cyclops AI analysis)"
+        Write-Host "4.  Container Stats        (live CPU/RAM/IO)"
+        Write-Host "5.  Build Image            (Forge generates Dockerfile)"
+        Write-Host "6.  Volumes"
+        Write-Host "7.  Networks"
+        Write-Host "8.  Docker Compose Generator (full AI stack)"
+        Write-Host "9.  Back"
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Show-DockerContainers }
+            "2" { Start-OpenWebUI }
+            "3" { Show-ContainerLogs }
+            "4" { Show-ContainerStats }
+            "5" { Build-DockerImageFromForge }
+            "6" { Manage-DockerVolumes }
+            "7" { Manage-DockerNetworks }
+            "8" { New-DockerComposeStack }
+            "9" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "9")
+}
+
+# ============================================================
+# TERRAFORM
+# ============================================================
+
+function Assert-TerraformInstalled {
+    if (Test-CommandExists "terraform") { return $true }
+    Write-Err "Terraform not found. Install from https://developer.hashicorp.com/terraform/install"
+    return $false
+}
+
+function Get-TerraformWorkdir {
+    $cfg = Get-DevOpsConfig
+    $dir = $cfg["TF_WORKDIR"]
+    if ([string]::IsNullOrWhiteSpace($dir) -or -not (Test-Path $dir)) {
+        $dir = Read-Host "Terraform working directory path"
+        if (Test-Path $dir) { $cfg["TF_WORKDIR"] = $dir; Save-DevOpsConfig $cfg }
+        else { Write-Err "Path not found."; return $null }
+    }
+    return $dir
+}
+
+function Invoke-TerraformPlanWithReview {
+    Show-Header
+    if (-not (Assert-TerraformInstalled)) { Pause-Menu; return }
+    $dir = Get-TerraformWorkdir
+    if (-not $dir) { Pause-Menu; return }
+
+    Write-Info "Running terraform plan..."
+    $planOut = terraform -chdir="$dir" plan -no-color 2>&1 | Out-String
+    Write-Host $planOut
+
+    $review = Read-Host "Have Professor-X review this plan before apply? (Enter=yes / N=skip)"
+    if ($review -ne "N" -and $review -ne "n") {
+        $planSnip = if ($planOut.Length -gt 7000) { $planOut.Substring($planOut.Length - 7000) } else { $planOut }
+        $system   = "You are a senior DevOps architect and Terraform expert. Review this terraform plan output. Identify: 1) Resources being created/modified/destroyed, 2) Any risky or irreversible changes, 3) Potential cost implications, 4) Security concerns, 5) Your recommendation: safe to apply or needs review."
+        Write-Info "Professor-X is reviewing the plan..."
+        $r = Invoke-OllamaWithSystem -Model $Agents["Professor-X"].Model -SystemPrompt $system -UserPrompt $planSnip -TimeoutSec 180
+        Write-Host ""; Write-Info "Professor-X Review:"; Write-Host $r
+        $out = "$PSScriptRoot\CHAMP-Sessions\tf-plan-review-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+        Set-Content $out -Value "# Terraform Plan Review`n`n$r`n`n---`n`n## Raw Plan`n`n``````$planOut``````" -Encoding UTF8
+        Write-OK "Review saved: $out"
+        Write-ActivityLog "Terraform: Professor-X reviewed plan in $dir"
+    }
+    Pause-Menu
+}
+
+function Invoke-TerraformMenu {
+    do {
+        Show-Header
+        Write-Info "Terraform Control"
+        Write-Info "-----------------"
+        $cfg = Get-DevOpsConfig
+        $wd  = if ($cfg["TF_WORKDIR"]) { $cfg["TF_WORKDIR"] } else { "(not set)" }
+        Write-Host "Working dir: $wd" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "1. Set working directory"
+        Write-Host "2. Init"
+        Write-Host "3. Validate"
+        Write-Host "4. Plan  (+ Professor-X AI review)"
+        Write-Host "5. Apply"
+        Write-Host "6. Destroy"
+        Write-Host "7. Show state"
+        Write-Host "8. List workspaces"
+        Write-Host "9. Forge generates .tf file"
+        Write-Host "10. Back"
+        $c = Read-Host "Select"
+        if (-not (Assert-TerraformInstalled) -and $c -ne "9" -and $c -ne "10") { Pause-Menu; continue }
+
+        switch ($c) {
+            "1" {
+                $d = Read-Host "Path to Terraform directory"
+                if (Test-Path $d) { $cfg["TF_WORKDIR"] = $d; Save-DevOpsConfig $cfg; Write-OK "Set: $d" }
+                else { Write-Err "Path not found." }
+                Pause-Menu
+            }
+            "2" {
+                $dir = Get-TerraformWorkdir
+                if ($dir) { terraform -chdir="$dir" init; Write-ActivityLog "Terraform: init in $dir" }
+                Pause-Menu
+            }
+            "3" {
+                $dir = Get-TerraformWorkdir
+                if ($dir) { terraform -chdir="$dir" validate }
+                Pause-Menu
+            }
+            "4" { Invoke-TerraformPlanWithReview }
+            "5" {
+                $dir = Get-TerraformWorkdir
+                if ($dir) {
+                    Write-Warn "This will apply changes to real infrastructure."
+                    $confirm = Read-Host "Type YES to apply"
+                    if ($confirm -eq "YES") {
+                        terraform -chdir="$dir" apply -auto-approve
+                        Write-ActivityLog "Terraform: applied in $dir"
+                        Play-SuccessSound
+                    }
+                }
+                Pause-Menu
+            }
+            "6" {
+                $dir = Get-TerraformWorkdir
+                if ($dir) {
+                    Write-Warn "DESTROY will delete all managed resources. This is irreversible."
+                    $confirm = Read-Host "Type DESTROY to confirm"
+                    if ($confirm -eq "DESTROY") {
+                        terraform -chdir="$dir" destroy -auto-approve
+                        Write-ActivityLog "Terraform: destroyed in $dir"
+                    }
+                }
+                Pause-Menu
+            }
+            "7" {
+                $dir = Get-TerraformWorkdir
+                if ($dir) { terraform -chdir="$dir" state list; Write-Host ""; $r = Read-Host "Show detail for resource (Enter to skip)"; if ($r) { terraform -chdir="$dir" state show $r } }
+                Pause-Menu
+            }
+            "8" {
+                $dir = Get-TerraformWorkdir
+                if ($dir) { terraform -chdir="$dir" workspace list }
+                Pause-Menu
+            }
+            "9" {
+                Show-Header
+                $desc    = Read-Host "Describe the infrastructure to provision"
+                $cloud   = Read-Host "Cloud/provider (aws/azure/gcp/proxmox/other)"
+                $system  = "You are a Terraform expert. Generate complete, production-quality Terraform HCL (.tf) code for the $cloud provider. Include provider block, variables, resources, and outputs. Follow best practices. Output ONLY HCL, no explanations."
+                $r       = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt $desc -TimeoutSec 240
+                $r       = Remove-CodeFences $r
+                $out     = "$PSScriptRoot\CHAMP-Sessions\forge-infra-$(Get-Date -Format 'yyyyMMdd-HHmmss').tf"
+                Set-Content $out -Value $r -Encoding UTF8
+                Write-Host ""; Write-Host $r; Write-OK "Saved: $out"
+                Write-ActivityLog "Terraform: Forge generated .tf for '$desc'"
+                Play-SuccessSound
+                Pause-Menu
+            }
+            "10" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "10")
+}
+
+# ============================================================
+# PACKER
+# ============================================================
+
+function Assert-PackerInstalled {
+    if (Test-CommandExists "packer") { return $true }
+    Write-Err "Packer not found. Install from https://developer.hashicorp.com/packer/install"
+    return $false
+}
+
+function Invoke-PackerMenu {
+    do {
+        Show-Header
+        Write-Info "Packer Control"
+        Write-Info "--------------"
+        Write-Host "1. Validate template"
+        Write-Host "2. Build image"
+        Write-Host "3. Forge generates HCL template"
+        Write-Host "4. Cyclops audits template for security"
+        Write-Host "5. Back"
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" {
+                Show-Header
+                if (-not (Assert-PackerInstalled)) { Pause-Menu; break }
+                $tpl = Read-Host "Path to Packer template (.pkr.hcl)"
+                if (-not (Test-Path $tpl)) { Write-Err "File not found."; Pause-Menu; break }
+                packer validate $tpl
+                Write-ActivityLog "Packer: validated $tpl"
+                Pause-Menu
+            }
+            "2" {
+                Show-Header
+                if (-not (Assert-PackerInstalled)) { Pause-Menu; break }
+                $tpl = Read-Host "Path to Packer template"
+                if (-not (Test-Path $tpl)) { Write-Err "File not found."; Pause-Menu; break }
+                $dir = Split-Path $tpl
+                Write-Info "Initialising Packer plugins..."
+                packer init $tpl
+                Write-Info "Building image (this may take a while)..."
+                packer build $tpl
+                if ($LASTEXITCODE -eq 0) {
+                    Write-OK "Build complete."
+                    Send-ToastNotification "CHAMP AI" "Packer build finished."
+                    Write-ActivityLog "Packer: built $tpl"
+                    Play-SuccessSound
+                } else { Write-Err "Build failed."; Play-ErrorSound }
+                Pause-Menu
+            }
+            "3" {
+                Show-Header
+                $desc   = Read-Host "Describe the image to build"
+                $plugin = Read-Host "Packer plugin/builder (proxmox/virtualbox/qemu/vmware/aws-ebs)"
+                $system = "You are a Packer and DevOps expert. Generate a complete, production-quality Packer HCL template (.pkr.hcl) for the $plugin builder. Include: required_plugins block, source block, build block with provisioners. Use shell/ansible provisioners as appropriate. Output ONLY the HCL content, no explanations."
+                $r      = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt "Build a $plugin image for: $desc" -TimeoutSec 180
+                $r      = Remove-CodeFences $r
+                $out    = "$PSScriptRoot\CHAMP-Sessions\packer-$(Get-Date -Format 'yyyyMMdd-HHmmss').pkr.hcl"
+                Set-Content $out -Value $r -Encoding UTF8
+                Write-Host ""; Write-Host $r; Write-OK "Saved: $out"
+                Write-ActivityLog "Packer: Forge generated template for '$desc'"
+                Play-SuccessSound
+                Pause-Menu
+            }
+            "4" {
+                Show-Header
+                $tpl = Read-Host "Path to Packer template to audit"
+                if (-not (Test-Path $tpl)) { Write-Err "File not found."; Pause-Menu; break }
+                $content = Get-Content $tpl -Raw
+                $system  = "You are a security engineer specialising in infrastructure-as-code. Audit this Packer template for security issues: hardcoded credentials, overly permissive SSH settings, use of sudo without restrictions, insecure provisioner commands, exposed ports, missing hardening steps. List findings with severity (HIGH/MEDIUM/LOW) and remediation."
+                Write-Info "Cyclops is auditing the template..."
+                $r = Invoke-OllamaWithSystem -Model $Agents["Cyclops"].Model -SystemPrompt $system -UserPrompt $content -TimeoutSec 120
+                Write-Host ""; Write-Info "Cyclops Security Audit:"; Write-Host $r
+                $out = "$PSScriptRoot\CHAMP-Sessions\packer-audit-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+                Set-Content $out -Value "# Packer Security Audit`n`n$r" -Encoding UTF8
+                Write-OK "Audit saved: $out"
+                Write-ActivityLog "Packer: Cyclops audited $tpl"
+                Play-SuccessSound
+                Pause-Menu
+            }
+            "5" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "5")
+}
+
+# ============================================================
+# ANSIBLE
+# ============================================================
+
+function Assert-AnsibleInstalled {
+    if (Test-CommandExists "ansible") { return $true }
+    # Try WSL
+    $wslCheck = wsl ansible --version 2>$null
+    if ($LASTEXITCODE -eq 0) { return $true }
+    Write-Err "Ansible not found. Install via WSL (wsl pip install ansible) or native Windows."
+    return $false
+}
+
+function Get-AnsibleRunner {
+    if (Test-CommandExists "ansible") { return "ansible" }
+    return "wsl ansible"
+}
+
+function Get-AnsibleInventory {
+    $cfg = Get-DevOpsConfig
+    $inv = $cfg["ANSIBLE_INVENTORY"]
+    if ([string]::IsNullOrWhiteSpace($inv) -or -not (Test-Path $inv)) {
+        $inv = Read-Host "Path to Ansible inventory file (or directory)"
+        if (Test-Path $inv) { $cfg["ANSIBLE_INVENTORY"] = $inv; Save-DevOpsConfig $cfg }
+        else { Write-Err "Inventory not found."; return $null }
+    }
+    return $inv
+}
+
+function Invoke-AnsibleMenu {
+    do {
+        Show-Header
+        Write-Info "Ansible Control"
+        Write-Info "---------------"
+        $cfg = Get-DevOpsConfig
+        $inv = if ($cfg["ANSIBLE_INVENTORY"]) { $cfg["ANSIBLE_INVENTORY"] } else { "(not set)" }
+        Write-Host "Inventory: $inv" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "1.  Set inventory path"
+        Write-Host "2.  Ping all hosts"
+        Write-Host "3.  Run playbook  (+ Professor-X review before exec)"
+        Write-Host "4.  Ad-hoc command"
+        Write-Host "5.  Show inventory"
+        Write-Host "6.  Install Galaxy role"
+        Write-Host "7.  Forge generates playbook"
+        Write-Host "8.  Cyclops audits playbook for security"
+        Write-Host "9.  Back"
+        $c = Read-Host "Select"
+
+        switch ($c) {
+            "1" {
+                $i = Read-Host "Inventory path"
+                if (Test-Path $i) { $cfg["ANSIBLE_INVENTORY"] = $i; Save-DevOpsConfig $cfg; Write-OK "Set: $i" }
+                else { Write-Err "Not found." }
+                Pause-Menu
+            }
+            "2" {
+                if (-not (Assert-AnsibleInstalled)) { Pause-Menu; break }
+                $inv = Get-AnsibleInventory; if (-not $inv) { Pause-Menu; break }
+                $runner = Get-AnsibleRunner
+                Invoke-Expression "$runner all -i '$inv' -m ping"
+                Pause-Menu
+            }
+            "3" {
+                Show-Header
+                if (-not (Assert-AnsibleInstalled)) { Pause-Menu; break }
+                $inv  = Get-AnsibleInventory; if (-not $inv) { Pause-Menu; break }
+                $book = Read-Host "Path to playbook"
+                if (-not (Test-Path $book)) { Write-Err "Playbook not found."; Pause-Menu; break }
+
+                $review = Read-Host "Have Professor-X review playbook before running? (Enter=yes)"
+                if ($review -ne "N" -and $review -ne "n") {
+                    $content = Get-Content $book -Raw
+                    $system  = "You are a senior DevOps engineer and Ansible expert. Review this playbook. Identify: 1) What it does step by step, 2) Any risky or destructive tasks, 3) Idempotency concerns, 4) Security issues, 5) Your recommendation: safe to run or needs review."
+                    Write-Info "Professor-X is reviewing the playbook..."
+                    $r = Invoke-OllamaWithSystem -Model $Agents["Professor-X"].Model -SystemPrompt $system -UserPrompt $content -TimeoutSec 120
+                    Write-Host ""; Write-Info "Professor-X Review:"; Write-Host $r
+                    $confirm = Read-Host "Proceed with execution? (YES to run)"
+                    if ($confirm -ne "YES") { Pause-Menu; break }
+                }
+
+                $extraArgs = Read-Host "Extra args (e.g. --tags deploy --limit webservers, or Enter for none)"
+                $runner    = Get-AnsibleRunner
+                Invoke-Expression "$runner-playbook -i '$inv' '$book' $extraArgs"
+                if ($LASTEXITCODE -eq 0) { Write-OK "Playbook completed."; Play-SuccessSound; Write-ActivityLog "Ansible: ran $book" }
+                else { Write-Err "Playbook failed."; Play-ErrorSound }
+                Pause-Menu
+            }
+            "4" {
+                if (-not (Assert-AnsibleInstalled)) { Pause-Menu; break }
+                $inv    = Get-AnsibleInventory; if (-not $inv) { Pause-Menu; break }
+                $hosts  = Read-Host "Target hosts/group (e.g. all, webservers)"
+                $module = Read-Host "Module (e.g. shell, copy, service, yum)"
+                $args   = Read-Host "Module args (e.g. 'cmd=uptime' or 'name=nginx state=started')"
+                $runner = Get-AnsibleRunner
+                Invoke-Expression "$runner '$hosts' -i '$inv' -m $module -a '$args'"
+                Write-ActivityLog "Ansible: ad-hoc $module on $hosts"
+                Pause-Menu
+            }
+            "5" {
+                if (-not (Assert-AnsibleInstalled)) { Pause-Menu; break }
+                $inv    = Get-AnsibleInventory; if (-not $inv) { Pause-Menu; break }
+                $runner = Get-AnsibleRunner
+                Invoke-Expression "$runner-inventory -i '$inv' --list"
+                Pause-Menu
+            }
+            "6" {
+                if (-not (Assert-AnsibleInstalled)) { Pause-Menu; break }
+                $role   = Read-Host "Galaxy role name (e.g. geerlingguy.docker)"
+                $runner = Get-AnsibleRunner
+                Invoke-Expression "$runner-galaxy install $role"
+                Write-ActivityLog "Ansible: installed Galaxy role $role"
+                Pause-Menu
+            }
+            "7" {
+                Show-Header
+                $task   = Read-Host "Describe what the playbook should do"
+                $hosts  = Read-Host "Target hosts/group (e.g. webservers, all)"
+                $os     = Read-Host "Target OS (ubuntu/centos/rhel/debian)"
+                $system = "You are an Ansible expert. Generate a complete, production-quality Ansible playbook in YAML. Follow best practices: use handlers, become where needed, check mode compatibility, idempotent tasks. Output ONLY the YAML playbook, no explanations."
+                $prompt = "Write an Ansible playbook for $os targeting '$hosts' to: $task"
+                $r      = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt $prompt -TimeoutSec 180
+                $r      = Remove-CodeFences $r
+                $out    = "$PSScriptRoot\CHAMP-Sessions\playbook-$(Get-Date -Format 'yyyyMMdd-HHmmss').yml"
+                Set-Content $out -Value $r -Encoding UTF8
+                Write-Host ""; Write-Host $r; Write-OK "Saved: $out"
+                Write-ActivityLog "Ansible: Forge generated playbook for '$task'"
+                Play-SuccessSound
+                Pause-Menu
+            }
+            "8" {
+                Show-Header
+                $book = Read-Host "Path to playbook to audit"
+                if (-not (Test-Path $book)) { Write-Err "File not found."; Pause-Menu; break }
+                $content = Get-Content $book -Raw
+                $system  = "You are a security engineer specialising in Ansible and configuration management. Audit this playbook for: hardcoded passwords or secrets, use of shell/command over idempotent modules, privilege escalation risks, file permission issues, network exposure, unvalidated inputs. List findings with severity and remediation."
+                Write-Info "Cyclops is auditing the playbook..."
+                $r = Invoke-OllamaWithSystem -Model $Agents["Cyclops"].Model -SystemPrompt $system -UserPrompt $content -TimeoutSec 120
+                Write-Host ""; Write-Info "Cyclops Security Audit:"; Write-Host $r
+                $out = "$PSScriptRoot\CHAMP-Sessions\ansible-audit-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+                Set-Content $out -Value "# Ansible Security Audit`n`n$r" -Encoding UTF8
+                Write-OK "Audit saved: $out"
+                Write-ActivityLog "Ansible: Cyclops audited $book"
+                Play-SuccessSound
+                Pause-Menu
+            }
+            "9" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "9")
+}
+
+# ============================================================
+# DEVOPS CONTROL PANEL — Main Menu
+# ============================================================
+
+function Show-DevOpsMenu {
+    Show-Header
+    Write-Host "====================================================" -ForegroundColor DarkMagenta
+    Write-Host "         DEVOPS CONTROL PANEL" -ForegroundColor Magenta
+    Write-Host "====================================================" -ForegroundColor DarkMagenta
+    Write-Host ""
+    Write-Host "1.  Proxmox      " -NoNewline; Write-Host "REST API — VMs, containers, snapshots, storage" -ForegroundColor DarkGray
+    Write-Host "2.  GitHub       " -NoNewline; Write-Host "gh CLI — repos, issues, PRs (Forge review), Actions" -ForegroundColor DarkGray
+    Write-Host "3.  Docker       " -NoNewline; Write-Host "build, logs, stats, volumes, networks, AI Dockerfile" -ForegroundColor DarkGray
+    Write-Host "4.  Terraform    " -NoNewline; Write-Host "init/plan/apply/destroy + Professor-X review + Forge generate" -ForegroundColor DarkGray
+    Write-Host "5.  Packer       " -NoNewline; Write-Host "validate/build + Forge HCL + Cyclops audit" -ForegroundColor DarkGray
+    Write-Host "6.  Ansible      " -NoNewline; Write-Host "playbooks, ad-hoc, galaxy + Forge generate + Cyclops audit" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "7.  Back"
+}
+
+function DevOps-Menu {
+    do {
+        Show-DevOpsMenu
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Proxmox-Menu }
+            "2" { GitHub-Menu }
+            "3" { Docker-Menu }
+            "4" { Invoke-TerraformMenu }
+            "5" { Invoke-PackerMenu }
+            "6" { Invoke-AnsibleMenu }
+            "7" { return }
+            default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "7")
+}
+
+# -----------------------------
+# Sub-menus
+# -----------------------------
+function Show-AgentMenu {
+    Show-Header
+    Write-Info "X-Agent Launcher"
+    Write-Info "----------------"
+    Write-Host "1. Activate Professor-X  - Strategic reasoning"
+    Write-Host "2. Activate Forge        - Coding and development"
+    Write-Host "3. Activate Cyclops      - Cybersecurity analysis"
+    Write-Host "4. Activate Nightcrawler - Fast lightweight assistant"
+    Write-Host "5. Activate Wolverine    - Recovery/resilience assistant"
+    Write-Host "6. Activate Magneto      - Experimental engineering"
+    Write-Host "7. Activate Scout        - Vision agent (image → UI / describe)"
+    Write-Host "8. Run Custom Model"
+    Write-Host "9. Quick Query (one-shot prompt)"
+    Write-Host "10. Smart Agent Router"
+    Write-Host "11. Back"
+}
+
+function Agent-Menu {
+    do {
+        Show-AgentMenu
+        $choice = Read-Host "Select an agent"
+        switch ($choice) {
+            "1"  { Activate-Agent "Professor-X" }
+            "2"  { Activate-Agent "Forge" }
+            "3"  { Activate-Agent "Cyclops" }
+            "4"  { Activate-Agent "Nightcrawler" }
+            "5"  { Activate-Agent "Wolverine" }
+            "6"  { Activate-Agent "Magneto" }
+            "7"  { Activate-Scout }
+            "8"  { Run-CustomModel }
+            "9"  { Quick-QueryAgent }
+            "10" { Smart-RouteAgent }
+            "11" { return }
+            default { Speak-CHAMP "Invalid agent selection."; Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "11")
+}
+
+function Show-WolverineMenu {
+    Show-Header
+    Write-Info "Wolverine Recovery Center"
+    Write-Info "-------------------------"
+    Write-Host "1. Wolverine Health Scan"
+    Write-Host "2. Wolverine Recover Services"
+    Write-Host "3. Wolverine Emergency Restart"
+    Write-Host "4. Back"
+}
+
+function Wolverine-Menu {
+    do {
+        Show-WolverineMenu
+        $choice = Read-Host "Select Wolverine action"
+        switch ($choice) {
+            "1" { Wolverine-HealthScan }
+            "2" { Wolverine-RecoverServices }
+            "3" { Wolverine-EmergencyRestart }
+            "4" { return }
+            default { Speak-CHAMP "Invalid Wolverine selection."; Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "4")
+}
+
+# -----------------------------
+# Main Menu
+# -----------------------------
+function Show-MainMenu {
+    Show-Header
+    Write-Host "1.  CEREBRO System Status"
+    Write-Host "2.  Start Ollama"
+    Write-Host "2S. Stop Ollama"
+    Write-Host "3.  X-Agent Launcher"
+    Write-Host "4.  Show X-Agent Model Map"
+    Write-Host "5.  Pull/Update Single X-Agent Model"
+    Write-Host "6.  Pull All X-Agent Models"
+    Write-Host "7.  List Ollama Models"
+    Write-Host "8.  Start Open WebUI"
+    Write-Host "9.  Stop Open WebUI"
+    Write-Host "10. Restart Open WebUI"
+    Write-Host "11. Update Open WebUI Manually"
+    Write-Host "12. Open Open WebUI Dashboard"
+    Write-Host "13. Show Docker Containers"
+    Write-Host "14. Open VS Code Project Folder"
+    Write-Host "15. Wolverine Recovery Center"
+    Write-Host "16. Toggle Voice Responses"
+    Write-Host "17. Toggle Sound Alerts"
+    Write-Host "18. View Activity Log"
+    Write-Host "19. AI Development Tools" -ForegroundColor Cyan
+    Write-Host "20. DevOps Control Panel" -ForegroundColor Magenta
+    Write-Host "21. Exit"
+    Write-Host ""
+    if ($EnableVoice)  { Write-OK   "Voice  : ON"  } else { Write-Warn "Voice  : OFF" }
+    if ($EnableSounds) { Write-OK   "Sounds : ON"  } else { Write-Warn "Sounds : OFF" }
+}
+
+CHAMP-Greeting
+Write-ActivityLog "CHAMP AI Control Center started"
+
+do {
+    Show-MainMenu
+    $choice = Read-Host "Select an option"
+    switch ($choice) {
+        "1"  { Show-SystemStatus }
+        "2"  { Start-Ollama }
+        "2S" { Stop-Ollama }
+        "2s" { Stop-Ollama }
+        "3"  { Agent-Menu }
+        "4"  { Show-AgentMap }
+        "5"  { Pull-SingleAgentModel }
+        "6"  { Pull-AgentModels }
+        "7"  { List-OllamaModels }
+        "8"  { Start-OpenWebUI }
+        "9"  { Stop-OpenWebUI }
+        "10" { Restart-OpenWebUI }
+        "11" { Update-OpenWebUI }
+        "12" { Open-WebDashboard }
+        "13" { Show-DockerContainers }
+        "14" { Open-VSCodeProject }
+        "15" { Wolverine-Menu }
+        "16" { Toggle-Voice }
+        "17" { Toggle-Sounds }
+        "18" { Show-ActivityLog }
+        "19" { AIDevTools-Menu }
+        "20" { DevOps-Menu }
+        "21" { Speak-CHAMP "CEREBRO shutting down. Goodbye, Champ."; Write-ActivityLog "CHAMP AI Control Center exited"; Write-Host "Exiting..." }
+        default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
+    }
+} while ($choice -ne "21")

@@ -1,0 +1,10 @@
+# Normalize line endings on commit; checkout uses platform native
+* text=auto
+
+# PowerShell scripts — keep CRLF on Windows
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Docs
+*.md  text eol=lf
+*.html text eol=lf

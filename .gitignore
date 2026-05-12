@@ -1,0 +1,30 @@
+# Runtime files — generated at startup, contain personal data
+CHAMP-activity.log
+CHAMP-prompts.json
+.env
+.devops-config.json
+
+# Custom agent Modelfiles built by Modelfile Creator
+Modelfile-*
+
+# Python virtual environment
+champ-ai-env/
+
+# Exported sessions and comparison reports
+CHAMP-Sessions/
+
+# Backup snapshots
+CHAMP-Backups/
+
+# Generated Docker Compose
+docker-compose.yml
+
+# Scheduled query wrapper scripts
+sched-CHAMP-*.ps1
+
+# Custom icon (user-supplied)
+champ-icon.ico
+
+# Windows
+Thumbs.db
+Desktop.ini
