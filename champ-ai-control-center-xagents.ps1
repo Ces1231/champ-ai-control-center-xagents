@@ -287,7 +287,7 @@ function Show-Header {
 function CHAMP-Greeting {
     Play-StartSound
     $hour = (Get-Date).Hour
-    $name = $env:USERNAME
+    $name = "Carnell"
     $timeGreeting = switch ($true) {
         ($hour -ge  5 -and $hour -lt 12) { "Good morning" }
         ($hour -ge 12 -and $hour -lt 17) { "Good afternoon" }
