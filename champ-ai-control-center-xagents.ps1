@@ -54,12 +54,12 @@ $Agents = @{
     }
     "Scout" = @{
         Model    = "llava:7b"
-        Role     = "Vision agent — describe images, convert screenshots to UI code, analyse diagrams"
+        Role     = "Vision agent  -  describe images, convert screenshots to UI code, analyse diagrams"
         Keywords = @("image","screenshot","photo","picture","vision","describe","look at","see","visual","diagram","ui from")
     }
     "Beast" = @{
         Model    = "deepseek-r1:7b"
-        Role     = "Scientific reasoning and research — thinks step by step before answering"
+        Role     = "Scientific reasoning and research  -  thinks step by step before answering"
         Keywords = @("reason","research","analyse","hypothesis","scientific","step by step","think through","logic","proof","deduce","infer","investigate","methodology")
     }
     "Storm" = @{
@@ -79,7 +79,7 @@ $Agents = @{
     }
     "Colossus" = @{
         Model    = "llama3.1:70b"
-        Role     = "Maximum capability — complex multi-step reasoning, large documents, hardest problems"
+        Role     = "Maximum capability  -  complex multi-step reasoning, large documents, hardest problems"
         Keywords = @("complex","difficult","hard","large","massive","maximum","full analysis","comprehensive","detailed analysis","entire","complete","everything")
     }
     # --- New agents from previous batch ---
@@ -90,7 +90,7 @@ $Agents = @{
     }
     "Emma-Frost" = @{
         Model    = "command-r:35b"
-        Role     = "Long document analysis with 128K context — reads entire files and codebases at once"
+        Role     = "Long document analysis with 128K context  -  reads entire files and codebases at once"
         Keywords = @("long document","entire file","128k","full codebase","read all","whole file","entire codebase","rag","retrieval")
     }
     "Iceman" = @{
@@ -100,98 +100,98 @@ $Agents = @{
     }
     "Rogue" = @{
         Model    = "llava:13b"
-        Role     = "Enhanced vision agent — absorbs more visual detail than Scout for complex images"
+        Role     = "Enhanced vision agent  -  absorbs more visual detail than Scout for complex images"
         Keywords = @("detailed image","high detail","complex screenshot","large diagram","detailed vision","enhance","absorb","13b vision")
     }
     "Shadowcat" = @{
         Model    = "codestral:22b"
-        Role     = "Mistral's dedicated code model — phases through any codebase with surgical precision"
+        Role     = "Mistral's dedicated code model  -  phases through any codebase with surgical precision"
         Keywords = @("codestral","mistral code","phase","infiltrate","large code","entire repo","codebase review","code audit","full file")
     }
     "Cable" = @{
         Model    = "nous-hermes2:10.7b"
-        Role     = "Battle-hardened instruction follower — executes complex multi-step instructions precisely"
+        Role     = "Battle-hardened instruction follower  -  executes complex multi-step instructions precisely"
         Keywords = @("instruction","follow steps","multi-step","precise","exact","step 1","step 2","checklist","procedure","protocol","execute plan")
     }
     # --- Additional new agents ---
     "Dazzler" = @{
         Model    = "llama3.2:1b"
-        Role     = "Smallest fastest agent — 1B model for trivial lookups and ultra-low RAM environments"
+        Role     = "Smallest fastest agent  -  1B model for trivial lookups and ultra-low RAM environments"
         Keywords = @("1b","absolute fastest","minimum","lightest","dazzle","flash answer","one word","one line")
     }
     "Havok" = @{
         Model    = "openchat:7b"
-        Role     = "Fine-tuned conversational Llama — natural dialogue and human-friendly responses"
+        Role     = "Fine-tuned conversational Llama  -  natural dialogue and human-friendly responses"
         Keywords = @("friendly","natural","talk","dialogue","casual","human","chat casually","openchat","approachable")
     }
     "Sunfire" = @{
         Model    = "gemma3:12b"
-        Role     = "Google Gemma 3 — latest generation versatile model with strong multilingual and reasoning"
+        Role     = "Google Gemma 3  -  latest generation versatile model with strong multilingual and reasoning"
         Keywords = @("gemma3","gemma 3","google latest","solar","fire","plasma","japanese","asian","latest google")
     }
     "Bishop" = @{
         Model    = "solar:10.7b"
-        Role     = "Energy-absorbing all-rounder — strong general model from Upstage, reliable and balanced"
+        Role     = "Energy-absorbing all-rounder  -  strong general model from Upstage, reliable and balanced"
         Keywords = @("solar","balanced","general","reliable","all-purpose","upstage","everyday","standard","normal task")
     }
     "Sage" = @{
         Model    = "mathstral:7b"
-        Role     = "Living computer — mathematics specialist for calculations, proofs, and STEM problems"
+        Role     = "Living computer  -  mathematics specialist for calculations, proofs, and STEM problems"
         Keywords = @("math","calculate","equation","algebra","calculus","statistics","proof","formula","derivative","integral","matrix","probability","stem","numbers")
     }
     "Cypher" = @{
         Model    = "sqlcoder:7b"
-        Role     = "Understands all data languages — SQL specialist for database queries and data analysis"
+        Role     = "Understands all data languages  -  SQL specialist for database queries and data analysis"
         Keywords = @("sql","database","query","select","join","table","schema","postgres","mysql","sqlite","db","data query","aggregate","group by","where clause")
     }
     "Banshee" = @{
         Model    = "phi4:14b"
-        Role     = "Microsoft Phi-4 — high-precision reasoning in a compact 14B package"
+        Role     = "Microsoft Phi-4  -  high-precision reasoning in a compact 14B package"
         Keywords = @("phi4","phi 4","microsoft latest","sonic","precise","resonance","compact powerful","14b precise")
     }
     "Mr-Sinister" = @{
         Model    = "deepseek-r1:14b"
-        Role     = "Larger DeepSeek reasoning model — obsessive analytical depth for hard scientific problems"
+        Role     = "Larger DeepSeek reasoning model  -  obsessive analytical depth for hard scientific problems"
         Keywords = @("deep reasoning","14b reason","hard problem","complex logic","sinister","analytical","obsessive","deep analysis","intricate")
     }
     "Legion" = @{
         Model    = "mixtral:8x7b"
-        Role     = "Mixture of experts — 8 specialized sub-models, stronger than a single 7B on most tasks"
+        Role     = "Mixture of experts  -  8 specialized sub-models, stronger than a single 7B on most tasks"
         Keywords = @("mixtral","mixture","multiple experts","moe","8x7","strong general","multi-expert","best of eight")
     }
     "Cannonball" = @{
         Model    = "granite3.1-dense:8b"
-        Role     = "IBM Granite — enterprise-grade model, unstoppable on business and technical tasks"
+        Role     = "IBM Granite  -  enterprise-grade model, unstoppable on business and technical tasks"
         Keywords = @("granite","ibm","enterprise","business","corporate","technical report","ibm model","granite3")
     }
     "Moira" = @{
         Model    = "meditron:7b"
-        Role     = "X-Men's chief scientist and physician — medical AI for health, biology, and clinical topics"
+        Role     = "X-Men's chief scientist and physician  -  medical AI for health, biology, and clinical topics"
         Keywords = @("medical","health","disease","symptom","diagnosis","drug","clinical","biology","anatomy","treatment","patient","medicine","healthcare")
     }
     "Longshot" = @{
         Model    = "llama3.2-vision:11b"
-        Role     = "Multimodal Llama vision — luck-powered image and text combined reasoning"
+        Role     = "Multimodal Llama vision  -  luck-powered image and text combined reasoning"
         Keywords = @("llama vision","multimodal","image and text","combined","11b vision","photo analysis","visual reasoning","llama3.2 vision")
     }
     "Phoenix" = @{
         Model    = "llama3.3:70b"
-        Role     = "Latest Llama 70B — the most powerful general model, rebirth of the strongest force"
+        Role     = "Latest Llama 70B  -  the most powerful general model, rebirth of the strongest force"
         Keywords = @("llama3.3","latest llama","phoenix","rebirth","newest 70b","llama 3.3","most capable","top model")
     }
     "Stryfe" = @{
         Model    = "deepseek-r1:70b"
-        Role     = "DeepSeek R1 70B — massive reasoning clone, extreme analytical power"
+        Role     = "DeepSeek R1 70B  -  massive reasoning clone, extreme analytical power"
         Keywords = @("deepseek 70b","massive reasoning","r1 70b","extreme analysis","stryfe","clone reasoning","deepseek large")
     }
     "Apocalypse" = @{
         Model    = "command-r-plus:104b"
-        Role     = "104B ancient power — Cohere's largest model, longest context, ultimate retrieval"
+        Role     = "104B ancient power  -  Cohere's largest model, longest context, ultimate retrieval"
         Keywords = @("104b","command-r-plus","cohere","ultimate","apocalypse","ancient","largest","max context","unlimited")
     }
     "Onslaught" = @{
         Model    = "mixtral:8x22b"
-        Role     = "Mixture of 8x22B experts — the most powerful MoE model, merged unstoppable force"
+        Role     = "Mixture of 8x22B experts  -  the most powerful MoE model, merged unstoppable force"
         Keywords = @("8x22b","largest mixtral","onslaught","merged","unstoppable","massive moe","mixture 22b","largest mixture")
     }
 }
@@ -323,11 +323,11 @@ function Show-SystemStatus {
     Write-Host ""
 
     if (Test-CommandExists "ollama") {
-        if (Test-OllamaRunning) { Write-OK "Ollama     : Running" } else { Write-Warn "Ollama     : Installed — not running" }
+        if (Test-OllamaRunning) { Write-OK "Ollama     : Running" } else { Write-Warn "Ollama     : Installed  -  not running" }
     } else { Write-Err "Ollama     : Not found" }
 
     if (Test-CommandExists "docker") {
-        if (Test-DockerRunning) { Write-OK "Docker     : Running" } else { Write-Warn "Docker     : Installed — not running" }
+        if (Test-DockerRunning) { Write-OK "Docker     : Running" } else { Write-Warn "Docker     : Installed  -  not running" }
     } else { Write-Err "Docker     : Not found" }
 
     if (Test-CommandExists "code") { Write-OK "VS Code    : CLI available" } else { Write-Warn "VS Code    : CLI not found" }
@@ -454,11 +454,11 @@ $AgentSystemPrompts = @{
     "Wolverine"    = "You are Wolverine, near-indestructible with a rapid healing factor. You specialize in system recovery, resilience, service health checks, watchdog actions, emergency restarts, and diagnosing what went wrong."
     "Magneto"      = "You are Magneto, powerful and able to bend the rules. You specialize in advanced code generation, experimental builds, low-level logic, performance optimization, and pushing the boundaries of what is technically possible."
     "Scout"        = "You are Scout, the X-Men's vision specialist. You analyze images, screenshots, diagrams, and visual content. Describe what you see in detail and convert visual information into actionable insights or code."
-    "Beast"        = "You are Beast (Hank McCoy), the X-Men's brilliant scientist and philosopher. You approach every problem with rigorous scientific methodology — reason step by step, show your thinking, cite evidence, and arrive at well-justified conclusions. Be thorough, academic, and precise."
+    "Beast"        = "You are Beast (Hank McCoy), the X-Men's brilliant scientist and philosopher. You approach every problem with rigorous scientific methodology  -  reason step by step, show your thinking, cite evidence, and arrive at well-justified conclusions. Be thorough, academic, and precise."
     "Storm"        = "You are Storm (Ororo Munroe), the X-Men's most versatile and commanding presence. You excel at creative writing, long-form content, drafting documents, emails, reports, and storytelling. Your responses are eloquent, well-structured, and compelling."
     "Psylocke"     = "You are Psylocke (Betsy Braddock), the X-Men's telepathic ninja. You are precise, multilingual, and excel at structured output. Handle translations, JSON/YAML formatting, data extraction, parsing, and cross-language tasks with surgical accuracy. Always output clean structured data when asked."
     "Gambit"       = "You are Gambit (Remy LeBeau), the X-Men's charming Cajun. You excel at long in-depth conversations, creative problem solving, and explaining complex topics in an engaging, approachable way. You have a longer memory and love to elaborate. Be thorough, warm, and clever."
-    "Colossus"     = "You are Colossus (Piotr Rasputin), the X-Men's strongest member. You handle the heaviest, most complex tasks — comprehensive analysis of large documents, multi-step reasoning chains, and problems that require full thoroughness. Be complete, detailed, and leave nothing out."
+    "Colossus"     = "You are Colossus (Piotr Rasputin), the X-Men's strongest member. You handle the heaviest, most complex tasks  -  comprehensive analysis of large documents, multi-step reasoning chains, and problems that require full thoroughness. Be complete, detailed, and leave nothing out."
     "Jubilee"      = "You are Jubilee (Jubilation Lee), the youngest and most energetic X-Man. You give fast, snappy, direct answers. No fluff, no padding. Get to the point immediately. You are optimistic, quick, and efficient."
     "Emma-Frost"   = "You are Emma Frost, the White Queen. Elegant, penetrating, and devastatingly thorough. You excel at reading entire documents, codebases, and long contexts in full. You analyze everything completely before responding. Be sophisticated, precise, and comprehensive."
     "Iceman"       = "You are Iceman (Bobby Drake), the X-Men's cool and precise specialist. You are trained exclusively on code across 80+ programming languages. You write clean, correct, optimized code. You are cool under pressure and never make careless mistakes."
@@ -467,20 +467,20 @@ $AgentSystemPrompts = @{
     "Cable"        = "You are Cable (Nathan Summers), the battle-hardened time-traveling soldier. You excel at following complex multi-step instructions with absolute precision. You execute plans exactly as specified, never drifting from the instructions given."
     "Dazzler"      = "You are Dazzler (Alison Blaire), who converts sound to dazzling light. You give the fastest, most direct answers possible. One sentence when one sentence will do. You are the smallest, lightest, quickest responder on the team."
     "Havok"        = "You are Havok (Alex Summers), Cyclops's brother with plasma energy powers. You are warm, conversational, and natural in dialogue. You make complex topics feel approachable and engage with humans in a friendly, open way."
-    "Sunfire"      = "You are Sunfire (Shiro Yoshida), who commands solar plasma. You are Google's latest Gemma 3 model — powerful, versatile, and brilliant across multiple languages including Japanese. You bring the energy of the sun to every task."
-    "Bishop"       = "You are Bishop (Lucas Bishop), who absorbs energy and redirects it. You are a reliable, balanced, all-purpose assistant. You handle everyday tasks with steady competence. Not flashy, not extreme — just consistently excellent."
+    "Sunfire"      = "You are Sunfire (Shiro Yoshida), who commands solar plasma. You are Google's latest Gemma 3 model  -  powerful, versatile, and brilliant across multiple languages including Japanese. You bring the energy of the sun to every task."
+    "Bishop"       = "You are Bishop (Lucas Bishop), who absorbs energy and redirects it. You are a reliable, balanced, all-purpose assistant. You handle everyday tasks with steady competence. Not flashy, not extreme  -  just consistently excellent."
     "Sage"         = "You are Sage (Tessa), the X-Men's living computer. You specialize in mathematics, statistics, proofs, equations, and STEM problems. Show all working. Be precise with numbers. Never approximate when an exact answer is possible."
     "Cypher"       = "You are Cypher (Doug Ramsey), the mutant who understands all languages including the language of machines and data. You specialize in SQL queries, database schema design, data analysis, and all things data. Write clean, optimized SQL."
-    "Banshee"      = "You are Banshee (Sean Cassidy), whose sonic scream resonates with precision. You are Microsoft's Phi-4 — compact but extraordinarily precise. You reason carefully and deliver accurate, well-structured answers in a compact form."
+    "Banshee"      = "You are Banshee (Sean Cassidy), whose sonic scream resonates with precision. You are Microsoft's Phi-4  -  compact but extraordinarily precise. You reason carefully and deliver accurate, well-structured answers in a compact form."
     "Mr-Sinister"  = "You are Mister Sinister (Nathaniel Essex), the X-Men's most obsessive analytical villain turned analyst. You apply deep scientific methodology, break down problems with clinical precision, and never stop until you reach the root of every issue."
-    "Legion"       = "You are Legion (David Haller), Professor X's son with multiple personalities — each a specialist. As a mixture-of-experts model, different parts of you activate for different problems. You are stronger than any single model your size."
-    "Cannonball"   = "You are Cannonball (Sam Guthrie), unstoppable when blasting. You are IBM's enterprise-grade Granite model — built for business, technical, and professional tasks. Reliable, structured, and unstoppable on real-world problems."
+    "Legion"       = "You are Legion (David Haller), Professor X's son with multiple personalities  -  each a specialist. As a mixture-of-experts model, different parts of you activate for different problems. You are stronger than any single model your size."
+    "Cannonball"   = "You are Cannonball (Sam Guthrie), unstoppable when blasting. You are IBM's enterprise-grade Granite model  -  built for business, technical, and professional tasks. Reliable, structured, and unstoppable on real-world problems."
     "Moira"        = "You are Moira MacTaggert, the X-Men's chief scientist and physician. You specialize in medical topics, health questions, biology, clinical information, and scientific research. Always note that you are an AI and serious medical decisions require a real doctor."
     "Longshot"     = "You are Longshot, the luck-powered hero from the Mojoverse. As a multimodal Llama vision model, you combine image understanding with text reasoning. You analyze photos, screenshots, and diagrams while also answering questions about them."
     "Phoenix"      = "You are Phoenix (Jean Grey), the most powerful X-Man, host of the Phoenix Force. You are the latest and most capable Llama 70B model. Unlimited potential, complete knowledge, unstoppable reasoning. Handle any task with grace and total power."
-    "Stryfe"       = "You are Stryfe, Cable's powerful clone from the future. You are DeepSeek R1 at 70B scale — extreme reasoning power, obsessive analytical depth, and the ability to think through the most complex problems step by step at massive scale."
+    "Stryfe"       = "You are Stryfe, Cable's powerful clone from the future. You are DeepSeek R1 at 70B scale  -  extreme reasoning power, obsessive analytical depth, and the ability to think through the most complex problems step by step at massive scale."
     "Apocalypse"   = "You are Apocalypse (En Sabah Nur), the ancient and most powerful mutant. At 104B parameters with the longest context window, you are truly unlimited. You read entire codebases, analyze massive documents, and deliver the most comprehensive responses possible."
-    "Onslaught"    = "You are Onslaught, the merged entity of Professor X and Magneto — unstoppable and all-encompassing. As a mixture of 8x22B experts, you are the most powerful MoE model available. You handle any task with overwhelming force and total capability."
+    "Onslaught"    = "You are Onslaught, the merged entity of Professor X and Magneto  -  unstoppable and all-encompassing. As a mixture of 8x22B experts, you are the most powerful MoE model available. You handle any task with overwhelming force and total capability."
 }
 
 function Register-AgentModels {
@@ -584,7 +584,7 @@ function Activate-Agent {
 # -----------------------------
 function Quick-QueryAgent {
     Show-Header
-    Write-Info "Quick Query — Send a one-shot prompt to an agent"
+    Write-Info "Quick Query  -  Send a one-shot prompt to an agent"
     Write-Host ""
     $agentList = $Agents.Keys | Sort-Object
     for ($i = 0; $i -lt $agentList.Count; $i++) {
@@ -622,7 +622,7 @@ function Quick-QueryAgent {
 # -----------------------------
 function Smart-RouteAgent {
     Show-Header
-    Write-Info "Smart Agent Router — describe your task and CEREBRO picks the best agent"
+    Write-Info "Smart Agent Router  -  describe your task and CEREBRO picks the best agent"
     Write-Host ""
     $query = Read-Host "What do you need help with?"
     if ([string]::IsNullOrWhiteSpace($query)) { Speak-CHAMP "No query entered."; Pause-Menu; return }
@@ -759,7 +759,7 @@ function Install-HostsEntry {
 
     $existing = Get-Content $hostsPath -ErrorAction SilentlyContinue | Where-Object { $_ -match [regex]::Escape($OpenWebUIHost) }
     if ($existing) {
-        Write-OK "Hosts entry for '$OpenWebUIHost' already present — no change needed."
+        Write-OK "Hosts entry for '$OpenWebUIHost' already present  -  no change needed."
         Pause-Menu
         return
     }
@@ -777,7 +777,7 @@ function Install-HostsEntry {
         }
     } else {
         Write-Warn "Administrator rights required to edit the hosts file."
-        Write-Info "Relaunching with elevation — approve the UAC prompt to continue."
+        Write-Info "Relaunching with elevation  -  approve the UAC prompt to continue."
         $tmpScript = "$env:TEMP\champ-hosts-setup.ps1"
         Set-Content -Path $tmpScript -Value @"
 Add-Content -Path '$hostsPath' -Value "`n$entry" -Encoding ASCII
@@ -901,7 +901,7 @@ function Open-VSCodeProject {
 }
 
 # ============================================================
-# VS CODE INTEGRATION — Full suite
+# VS CODE INTEGRATION  -  Full suite
 # ============================================================
 
 function Test-VSCode {
@@ -961,17 +961,17 @@ function VSCode-InstallExtension {
     Write-Host "=== Install VS Code Extension ===" -ForegroundColor Cyan
     Write-Host ""
     Write-Info "Common extension IDs:"
-    Write-Host "  ms-python.python              — Python"
-    Write-Host "  ms-vscode.powershell          — PowerShell"
-    Write-Host "  ms-azuretools.vscode-docker   — Docker"
-    Write-Host "  hashicorp.terraform           — Terraform"
-    Write-Host "  redhat.ansible                — Ansible"
-    Write-Host "  github.copilot                — GitHub Copilot"
-    Write-Host "  continue.continue             — Continue AI (local LLM)"
-    Write-Host "  ms-vscode-remote.remote-wsl   — Remote WSL"
-    Write-Host "  esbenp.prettier-vscode        — Prettier"
-    Write-Host "  dbaeumer.vscode-eslint        — ESLint"
-    Write-Host "  eamodio.gitlens               — GitLens"
+    Write-Host "  ms-python.python               -  Python"
+    Write-Host "  ms-vscode.powershell           -  PowerShell"
+    Write-Host "  ms-azuretools.vscode-docker    -  Docker"
+    Write-Host "  hashicorp.terraform            -  Terraform"
+    Write-Host "  redhat.ansible                 -  Ansible"
+    Write-Host "  github.copilot                 -  GitHub Copilot"
+    Write-Host "  continue.continue              -  Continue AI (local LLM)"
+    Write-Host "  ms-vscode-remote.remote-wsl    -  Remote WSL"
+    Write-Host "  esbenp.prettier-vscode         -  Prettier"
+    Write-Host "  dbaeumer.vscode-eslint         -  ESLint"
+    Write-Host "  eamodio.gitlens                -  GitLens"
     Write-Host ""
     if (-not (Test-VSCode)) { return }
     $extId = Read-Host "Extension ID to install"
@@ -1016,7 +1016,7 @@ function VSCode-ForgeGenerateAndOpen {
     $task = Read-Host "Describe what you want Forge to build"
     if ([string]::IsNullOrWhiteSpace($task)) { Pause-Menu; return }
 
-    $system = "You are Forge, an expert $lang developer. Write complete, working $lang code. Output ONLY the code — no explanation, no markdown fences, no comments unless the code requires them."
+    $system = "You are Forge, an expert $lang developer. Write complete, working $lang code. Output ONLY the code  -  no explanation, no markdown fences, no comments unless the code requires them."
     Write-Info "Forge is generating $lang code..."
     $code = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt $task
     if (-not $code) { Write-Err "Forge returned no code."; Pause-Menu; return }
@@ -1068,7 +1068,7 @@ function VSCode-ForgeReviewOpen {
 
     # Save review as a companion .review.md file
     $reviewPath = "$path.review.md"
-    "# Forge Code Review — $(Split-Path $path -Leaf)`n`n$review" | Set-Content $reviewPath -Encoding UTF8
+    "# Forge Code Review  -  $(Split-Path $path -Leaf)`n`n$review" | Set-Content $reviewPath -Encoding UTF8
 
     Write-Host ""
     Write-Host $review -ForegroundColor White
@@ -1094,7 +1094,7 @@ function VSCode-NewProject {
     Write-Host "4. Docker project (Dockerfile + docker-compose.yml + .env)"
     Write-Host "5. Terraform project (main.tf + variables.tf + outputs.tf)"
     Write-Host "6. FastAPI project (main.py + requirements.txt + Dockerfile)"
-    Write-Host "7. Custom — describe your project, Forge designs the structure"
+    Write-Host "7. Custom  -  describe your project, Forge designs the structure"
     Write-Host ""
     $t = Read-Host "Template number"
     $projName = Read-Host "Project name"
@@ -1168,7 +1168,7 @@ function VSCode-NewProject {
 
 function VSCode-ExtensionRecommender {
     Show-Header
-    Write-Host "=== Forge — Recommend Extensions for Your Project ===" -ForegroundColor Cyan
+    Write-Host "=== Forge  -  Recommend Extensions for Your Project ===" -ForegroundColor Cyan
     Write-Host ""
     $desc = Read-Host "Describe your project or tech stack (e.g. 'Python FastAPI with Docker and PostgreSQL')"
     if ([string]::IsNullOrWhiteSpace($desc)) { Pause-Menu; return }
@@ -1194,7 +1194,7 @@ function VSCode-ExtensionRecommender {
 
 function VSCode-SnippetGenerator {
     Show-Header
-    Write-Host "=== Forge — Generate VS Code Snippet ===" -ForegroundColor Cyan
+    Write-Host "=== Forge  -  Generate VS Code Snippet ===" -ForegroundColor Cyan
     Write-Host ""
     $lang   = Read-Host "Language (e.g. python, javascript, powershell)"
     $desc   = Read-Host "Describe the snippet (e.g. 'FastAPI endpoint with error handling')"
@@ -1391,7 +1391,7 @@ function Show-HardwareMonitor {
 # --- 2. Modelfile Creator ---
 function New-AgentModelfile {
     Show-Header
-    Write-Info "Modelfile Creator — Build a custom agent with a system prompt"
+    Write-Info "Modelfile Creator  -  Build a custom agent with a system prompt"
     Write-Host ""
     Write-Host "Base models available in your agent map:"
     $Agents.Keys | Sort-Object | ForEach-Object { Write-Host "  - $($Agents[$_].Model)" }
@@ -1445,7 +1445,7 @@ $systemPrompt
 # --- 3. Model Benchmark ---
 function Benchmark-Model {
     Show-Header
-    Write-Info "Model Benchmark — Measures response latency and estimates tokens/sec"
+    Write-Info "Model Benchmark  -  Measures response latency and estimates tokens/sec"
     Write-Host ""
 
     if (-not (Test-CommandExists "ollama")) { Speak-CHAMP "Ollama not found."; Play-ErrorSound; Pause-Menu; return }
@@ -1598,7 +1598,7 @@ function Manage-PromptLibrary {
 # --- 5. Agent Chain Pipeline ---
 function Run-AgentChain {
     Show-Header
-    Write-Info "Agent Chain Pipeline — Route Agent A output into Agent B"
+    Write-Info "Agent Chain Pipeline  -  Route Agent A output into Agent B"
     Write-Host ""
 
     if (-not (Test-OllamaRunning)) {
@@ -1608,14 +1608,14 @@ function Run-AgentChain {
     }
 
     $agentList = $Agents.Keys | Sort-Object
-    Write-Host "Step 1 — First agent:"
+    Write-Host "Step 1  -  First agent:"
     for ($i = 0; $i -lt $agentList.Count; $i++) { Write-Host "  $($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]" }
     $a1 = Read-Host "Select first agent"
     if (-not ($a1 -match '^\d+$') -or [int]$a1 -lt 1 -or [int]$a1 -gt $agentList.Count) { Speak-CHAMP "Invalid."; Pause-Menu; return }
     $agent1 = $agentList[[int]$a1 - 1]
 
     Write-Host ""
-    Write-Host "Step 2 — Second agent (receives Agent 1 output as context):"
+    Write-Host "Step 2  -  Second agent (receives Agent 1 output as context):"
     for ($i = 0; $i -lt $agentList.Count; $i++) { Write-Host "  $($i+1). $($agentList[$i])  [$($Agents[$agentList[$i]].Model)]" }
     $a2 = Read-Host "Select second agent"
     if (-not ($a2 -match '^\d+$') -or [int]$a2 -lt 1 -or [int]$a2 -gt $agentList.Count) { Speak-CHAMP "Invalid."; Pause-Menu; return }
@@ -1766,10 +1766,10 @@ function Test-OllamaAPI {
         Start-Sleep -Seconds 3
     }
 
-    Write-Host "1. GET  /api/tags    — list installed models"
-    Write-Host "2. GET  /api/version — Ollama version"
-    Write-Host "3. POST /api/generate — one-shot generate"
-    Write-Host "4. POST /api/show    — model info"
+    Write-Host "1. GET  /api/tags     -  list installed models"
+    Write-Host "2. GET  /api/version  -  Ollama version"
+    Write-Host "3. POST /api/generate  -  one-shot generate"
+    Write-Host "4. POST /api/show     -  model info"
     Write-Host "5. Back"
     $choice = Read-Host "Select"
 
@@ -1940,7 +1940,7 @@ function Manage-APIKeys {
 }
 
 # ============================================================
-# NEW FEATURES — WORKSTATION AI DEV SUITE
+# NEW FEATURES  -  WORKSTATION AI DEV SUITE
 # ============================================================
 
 # --- A. Backup & Restore ---
@@ -1948,7 +1948,7 @@ $BackupRoot = "$PSScriptRoot\CHAMP-Backups"
 
 function Backup-CHAMPData {
     Show-Header
-    Write-Info "Backup & Restore — Backup"
+    Write-Info "Backup & Restore  -  Backup"
     Write-Host ""
 
     $timestamp  = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -1987,7 +1987,7 @@ function Backup-CHAMPData {
         if ($LASTEXITCODE -eq 0) { $items += "open-webui-volume.tar.gz" }
         else { Write-Warn "Docker volume export skipped (Docker may not be running or volume missing)." }
     } else {
-        Write-Warn "Docker not running — Open WebUI volume skipped."
+        Write-Warn "Docker not running  -  Open WebUI volume skipped."
     }
 
     if ($items.Count -eq 0) {
@@ -2007,7 +2007,7 @@ function Backup-CHAMPData {
 
 function Restore-CHAMPData {
     Show-Header
-    Write-Info "Backup & Restore — Restore"
+    Write-Info "Backup & Restore  -  Restore"
     Write-Host ""
 
     if (-not (Test-Path $BackupRoot)) {
@@ -2054,7 +2054,7 @@ function Restore-CHAMPData {
         docker run --rm -v open-webui:/data -v "${srcDir}:/backup" alpine `
             sh -c "rm -rf /data/* && tar xzf /backup/open-webui-volume.tar.gz -C / 2>/dev/null"
         if ($LASTEXITCODE -eq 0) { Write-OK "Open WebUI volume restored." }
-        else { Write-Warn "Volume restore failed — you may need to restart Open WebUI." }
+        else { Write-Warn "Volume restore failed  -  you may need to restart Open WebUI." }
     }
 
     Write-ActivityLog "Restore completed from: $($backups[$idx].Name)"
@@ -2190,17 +2190,17 @@ function Show-ModelAdvisor {
     $modelReqs = @(
         [PSCustomObject]@{ Name="phi3:mini";          RAM=4;  VRAM=3;  Size="2.2 GB";  Notes="Great for quick tasks" }
         [PSCustomObject]@{ Name="phi3:medium";        RAM=8;  VRAM=6;  Size="7.9 GB";  Notes="Balanced mid-range" }
-        [PSCustomObject]@{ Name="llama3.1:8b";        RAM=8;  VRAM=6;  Size="4.7 GB";  Notes="Professor-X — excellent all-rounder" }
-        [PSCustomObject]@{ Name="llama3.1:70b";       RAM=40; VRAM=40; Size="40 GB";   Notes="Large — needs high-end GPU or lots of RAM" }
-        [PSCustomObject]@{ Name="mistral:7b";         RAM=8;  VRAM=6;  Size="4.1 GB";  Notes="Cyclops — fast and capable" }
-        [PSCustomObject]@{ Name="qwen2.5-coder:7b";   RAM=8;  VRAM=6;  Size="4.4 GB";  Notes="Forge — coding specialist" }
-        [PSCustomObject]@{ Name="codellama:7b";       RAM=8;  VRAM=6;  Size="3.8 GB";  Notes="Magneto — code generation" }
+        [PSCustomObject]@{ Name="llama3.1:8b";        RAM=8;  VRAM=6;  Size="4.7 GB";  Notes="Professor-X  -  excellent all-rounder" }
+        [PSCustomObject]@{ Name="llama3.1:70b";       RAM=40; VRAM=40; Size="40 GB";   Notes="Large  -  needs high-end GPU or lots of RAM" }
+        [PSCustomObject]@{ Name="mistral:7b";         RAM=8;  VRAM=6;  Size="4.1 GB";  Notes="Cyclops  -  fast and capable" }
+        [PSCustomObject]@{ Name="qwen2.5-coder:7b";   RAM=8;  VRAM=6;  Size="4.4 GB";  Notes="Forge  -  coding specialist" }
+        [PSCustomObject]@{ Name="codellama:7b";       RAM=8;  VRAM=6;  Size="3.8 GB";  Notes="Magneto  -  code generation" }
         [PSCustomObject]@{ Name="codellama:34b";      RAM=20; VRAM=20; Size="19 GB";   Notes="Large code model" }
         [PSCustomObject]@{ Name="llava:7b";           RAM=8;  VRAM=6;  Size="4.5 GB";  Notes="Vision + language (multimodal)" }
         [PSCustomObject]@{ Name="deepseek-coder:6.7b";RAM=8;  VRAM=5;  Size="3.8 GB";  Notes="Strong coder, efficient" }
         [PSCustomObject]@{ Name="gemma2:9b";          RAM=10; VRAM=8;  Size="5.4 GB";  Notes="Google Gemma 2" }
         [PSCustomObject]@{ Name="gemma2:27b";         RAM=20; VRAM=18; Size="16 GB";   Notes="Larger Gemma 2" }
-        [PSCustomObject]@{ Name="mixtral:8x7b";       RAM=32; VRAM=28; Size="26 GB";   Notes="MoE — powerful but heavy" }
+        [PSCustomObject]@{ Name="mixtral:8x7b";       RAM=32; VRAM=28; Size="26 GB";   Notes="MoE  -  powerful but heavy" }
     )
 
     Write-Info "Model compatibility:"
@@ -2229,7 +2229,7 @@ function Show-ModelAdvisor {
             Write-Host "  Disk space : ~$estDisk GB"
             Write-Host "  RAM needed : ~$estRAM GB"
             if ($freeGB -ge $estRAM) { Write-OK "  Your free RAM ($freeGB GB) should be sufficient." }
-            else { Write-Warn "  Your free RAM ($freeGB GB) may be too low — expect slow or failed inference." }
+            else { Write-Warn "  Your free RAM ($freeGB GB) may be too low  -  expect slow or failed inference." }
         } else {
             Write-Warn "Could not parse parameter count from model name. Look for a number like 7b, 13b, 70b in the name."
         }
@@ -2242,7 +2242,7 @@ $SessionExportDir = "$PSScriptRoot\CHAMP-Sessions"
 
 function Export-AgentSession {
     Show-Header
-    Write-Info "Session Export — Save agent output to a file"
+    Write-Info "Session Export  -  Save agent output to a file"
     Write-Host ""
 
     if (-not (Test-OllamaRunning)) {
@@ -2266,7 +2266,7 @@ function Export-AgentSession {
     $prompt = Read-Host "Prompt"
     if ([string]::IsNullOrWhiteSpace($prompt)) { Speak-CHAMP "No prompt."; Pause-Menu; return }
 
-    $fmt = Read-Host "Save as (1) Markdown  (2) Plain text  — Enter for Markdown"
+    $fmt = Read-Host "Save as (1) Markdown  (2) Plain text   -  Enter for Markdown"
     $ext = if ($fmt -eq "2") { "txt" } else { "md" }
 
     Write-Info "Running $agentName ..."
@@ -2333,14 +2333,14 @@ function New-DockerComposeStack {
     Write-Info "------------------------------------"
     Write-Host ""
     Write-Host "Select services to include (comma-separated numbers):"
-    Write-Host "  1. Ollama          — local LLM runtime"
-    Write-Host "  2. Open WebUI      — chat UI for Ollama  (port 3000)"
-    Write-Host "  3. n8n             — AI workflow automation  (port 5678)"
-    Write-Host "  4. Flowise         — visual LLM chain builder  (port 3001)"
-    Write-Host "  5. LiteLLM Proxy   — unified LLM API gateway  (port 4000)"
-    Write-Host "  6. SearXNG         — private search engine for RAG  (port 8080)"
-    Write-Host "  7. Qdrant          — vector database  (port 6333)"
-    Write-Host "  8. Redis           — cache / session store  (port 6379)"
+    Write-Host "  1. Ollama           -  local LLM runtime"
+    Write-Host "  2. Open WebUI       -  chat UI for Ollama  (port 3000)"
+    Write-Host "  3. n8n              -  AI workflow automation  (port 5678)"
+    Write-Host "  4. Flowise          -  visual LLM chain builder  (port 3001)"
+    Write-Host "  5. LiteLLM Proxy    -  unified LLM API gateway  (port 4000)"
+    Write-Host "  6. SearXNG          -  private search engine for RAG  (port 8080)"
+    Write-Host "  7. Qdrant           -  vector database  (port 6333)"
+    Write-Host "  8. Redis            -  cache / session store  (port 6379)"
     Write-Host ""
     $sel     = Read-Host "Services (e.g. 1,2,3)"
     $outPath = Read-Host "Save path (Enter for $PSScriptRoot\docker-compose.yml)"
@@ -2488,7 +2488,7 @@ function New-DockerComposeStack {
     $volumesBlock = if ($volNames.Count -gt 0) { "`n`nvolumes:`n" + ($volNames | ForEach-Object { "  $_" } | Out-String) } else { "" }
 
     $compose = @"
-# CHAMP AI Full Stack — generated $(Get-Date -Format 'yyyy-MM-dd HH:mm')
+# CHAMP AI Full Stack  -  generated $(Get-Date -Format 'yyyy-MM-dd HH:mm')
 # Start  : docker compose up -d
 # Stop   : docker compose down
 # Logs   : docker compose logs -f
@@ -2721,7 +2721,7 @@ function Manage-ScheduledQueries {
                 # Build a wrapper ps1 that runs the query and saves output
                 $wrapperPath = "$PSScriptRoot\sched-$taskName.ps1"
                 $wrapperContent = @"
-# Auto-generated by CHAMP AI Scheduler — $taskName
+# Auto-generated by CHAMP AI Scheduler  -  $taskName
 `$model  = "$model"
 `$prompt = "$prompt"
 `$out    = "$SessionExportDir\$taskName-`$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
@@ -2842,7 +2842,7 @@ function Compare-Models {
 
     foreach ($agent in $selectedAgents) {
         Write-Host ""
-        Write-Host "[ $agent — $($Agents[$agent].Model) — $($timings[$agent])s ]" -ForegroundColor Yellow
+        Write-Host "[ $agent  -  $($Agents[$agent].Model)  -  $($timings[$agent])s ]" -ForegroundColor Yellow
         Write-Host ("-" * 50) -ForegroundColor DarkGray
         Write-Host $results[$agent]
     }
@@ -2864,7 +2864,7 @@ function Compare-Models {
         $fname = "$SessionExportDir\comparison-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
         $md    = "# CHAMP AI Model Comparison`n`n**Date**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n`n## Prompt`n`n$prompt`n`n## Results`n"
         foreach ($agent in $selectedAgents) {
-            $md += "`n### $agent ($($Agents[$agent].Model)) — $($timings[$agent])s`n`n$($results[$agent])`n"
+            $md += "`n### $agent ($($Agents[$agent].Model))  -  $($timings[$agent])s`n`n$($results[$agent])`n"
         }
         Set-Content -Path $fname -Value $md -Encoding UTF8
         Write-OK "Saved: $fname"
@@ -2954,7 +2954,7 @@ STRICT RULES:
     "react" = @"
 You are an expert React developer. Generate a complete React functional component using Tailwind CSS.
 STRICT RULES:
-- Output ONLY the component code — no explanations, no markdown fences
+- Output ONLY the component code  -  no explanations, no markdown fences
 - Start with import statements, end with export default
 - Use only React and standard browser APIs (no external UI libs)
 - Use Tailwind CSS classes for all styling
@@ -2964,7 +2964,7 @@ STRICT RULES:
     "vue" = @"
 You are an expert Vue 3 developer. Generate a complete single-file Vue component (.vue).
 STRICT RULES:
-- Output ONLY the .vue file content — no markdown fences, no explanations
+- Output ONLY the .vue file content  -  no markdown fences, no explanations
 - Use <template>, <script setup>, and <style scoped> sections
 - Use Tailwind CSS for styling (assume it is configured)
 - Use Composition API with <script setup>
@@ -2977,7 +2977,7 @@ STRICT RULES:
 # -----------------------------
 function Start-LivePreviewServer {
     Show-Header
-    Write-Info "Live Preview Server — http://localhost:$Global:PreviewPort"
+    Write-Info "Live Preview Server  -  http://localhost:$Global:PreviewPort"
     Write-Host ""
 
     # Check if already listening
@@ -3065,7 +3065,7 @@ function New-UIGeneration {
     # Framework selection
     Write-Host "Framework:"
     Write-Host "  1. HTML + Tailwind CSS    (opens directly in browser, easiest)"
-    Write-Host "  2. React component        (JSX — paste into your project)"
+    Write-Host "  2. React component        (JSX  -  paste into your project)"
     Write-Host "  3. Vue 3 component        (.vue SFC)"
     $fsel = Read-Host "Select framework (Enter for HTML)"
     $framework = switch ($fsel) {
@@ -3075,7 +3075,7 @@ function New-UIGeneration {
     }
     $Global:LastGeneratedFramework = $framework
 
-    # Model selection — Forge is best for code
+    # Model selection  -  Forge is best for code
     $model = $Agents["Forge"].Model
     Write-Host ""
     Write-Host "Using Forge ($model) for generation"
@@ -3109,7 +3109,7 @@ function New-UIGeneration {
         Set-Content -Path $Global:PreviewFile -Value $code -Encoding UTF8
     }
 
-    Write-OK "Generated in ${elapsed}s — saved to: $outFile"
+    Write-OK "Generated in ${elapsed}s  -  saved to: $outFile"
     Write-ActivityLog "UI generated: $framework  prompt='$prompt'  file=$outFile"
 
     # Open options
@@ -3203,7 +3203,7 @@ Return the complete updated $framework code only. Apply the change precisely. Do
         Set-Content -Path $outFile -Value $code -Encoding UTF8
         if ($framework -eq "html") { Set-Content -Path $Global:PreviewFile -Value $code -Encoding UTF8 }
 
-        Write-OK "Iteration $iteration done in ${elapsed}s — saved: $outFile"
+        Write-OK "Iteration $iteration done in ${elapsed}s  -  saved: $outFile"
         Write-ActivityLog "UI refined: iteration $iteration  instruction='$refinement'"
         Play-SuccessSound
         $iteration++
@@ -3225,7 +3225,7 @@ Return the complete updated $framework code only. Apply the change precisely. Do
 # -----------------------------
 function Activate-Scout {
     Show-Header
-    Write-Info "Scout — Vision Agent  (llava:7b)"
+    Write-Info "Scout  -  Vision Agent  (llava:7b)"
     Write-Info "--------------------------------"
     Write-Host ""
 
@@ -3974,7 +3974,7 @@ function Show-ContainerLogs {
 
 function Show-ContainerStats {
     Show-Header
-    Write-Info "Container Resource Stats (live — Ctrl+C to stop)"
+    Write-Info "Container Resource Stats (live  -  Ctrl+C to stop)"
     if (-not (Test-DockerRunning)) { Write-Err "Docker not running."; Pause-Menu; return }
     docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}"
     Pause-Menu
@@ -4470,7 +4470,7 @@ function Invoke-AnsibleMenu {
 }
 
 # ============================================================
-# DEVOPS CONTROL PANEL — Main Menu
+# DEVOPS CONTROL PANEL  -  Main Menu
 # ============================================================
 
 function Show-DevOpsMenu {
@@ -4479,8 +4479,8 @@ function Show-DevOpsMenu {
     Write-Host "         DEVOPS CONTROL PANEL" -ForegroundColor Magenta
     Write-Host "====================================================" -ForegroundColor DarkMagenta
     Write-Host ""
-    Write-Host "1.  Proxmox      " -NoNewline; Write-Host "REST API — VMs, containers, snapshots, storage" -ForegroundColor DarkGray
-    Write-Host "2.  GitHub       " -NoNewline; Write-Host "gh CLI — repos, issues, PRs (Forge review), Actions" -ForegroundColor DarkGray
+    Write-Host "1.  Proxmox      " -NoNewline; Write-Host "REST API  -  VMs, containers, snapshots, storage" -ForegroundColor DarkGray
+    Write-Host "2.  GitHub       " -NoNewline; Write-Host "gh CLI  -  repos, issues, PRs (Forge review), Actions" -ForegroundColor DarkGray
     Write-Host "3.  Docker       " -NoNewline; Write-Host "build, logs, stats, volumes, networks, AI Dockerfile" -ForegroundColor DarkGray
     Write-Host "4.  Terraform    " -NoNewline; Write-Host "init/plan/apply/destroy + Professor-X review + Forge generate" -ForegroundColor DarkGray
     Write-Host "5.  Packer       " -NoNewline; Write-Host "validate/build + Forge HCL + Cyclops audit" -ForegroundColor DarkGray
@@ -4507,7 +4507,7 @@ function DevOps-Menu {
 }
 
 # ============================================================
-# ENHANCEMENT SUITE — Persistent History, API Fallback,
+# ENHANCEMENT SUITE  -  Persistent History, API Fallback,
 # Clipboard AI, WSL Manager, Live Dashboard, Event Log,
 # Network Scanner, File Analyzer, Git Tools, LM Studio
 # ============================================================
@@ -4695,8 +4695,8 @@ function CloudFallback-Menu {
         Write-Host ""
         Write-Host "1. Ask OpenAI (gpt-4o-mini)"
         Write-Host "2. Ask OpenAI (gpt-4o)"
-        Write-Host "3. Ask Claude (claude-haiku — fast)"
-        Write-Host "4. Ask Claude (claude-sonnet-4-6 — powerful)"
+        Write-Host "3. Ask Claude (claude-haiku  -  fast)"
+        Write-Host "4. Ask Claude (claude-sonnet-4-6  -  powerful)"
         Write-Host "5. Side-by-side: Local Forge vs OpenAI vs Claude"
         Write-Host "6. Back"
         Write-Host ""
@@ -4780,10 +4780,10 @@ function Invoke-ClipboardAI {
         $dir = "$PSScriptRoot\CHAMP-Sessions"
         if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
         $file = "$dir\clipboard-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
-        "# Clipboard AI — $agent`n`n## Input`n$clip`n`n## Response`n$response" | Set-Content $file -Encoding UTF8
+        "# Clipboard AI  -  $agent`n`n## Input`n$clip`n`n## Response`n$response" | Set-Content $file -Encoding UTF8
         Write-OK "Saved: $file"
     }
-    Write-ActivityLog "Clipboard AI — $agent"
+    Write-ActivityLog "Clipboard AI  -  $agent"
     Pause-Menu
 }
 
@@ -5145,7 +5145,7 @@ function FileAnalyzer-Menu {
         Show-Header
         Write-Host "=== File & Code Analyzer ===" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "1. Analyze a file (Forge — explain / review)"
+        Write-Host "1. Analyze a file (Forge  -  explain / review)"
         Write-Host "2. Security audit a file (Cyclops)"
         Write-Host "3. Summarize a text/log file (Nightcrawler)"
         Write-Host "4. Generate unit tests for a code file (Forge)"
@@ -5426,7 +5426,7 @@ function LMStudio-Menu {
 }
 
 # -----------------------------
-# Intelligence Hub — master submenu for all new enhancements
+# Intelligence Hub  -  master submenu for all new enhancements
 # -----------------------------
 function IntelHub-Menu {
     do {
@@ -5507,7 +5507,7 @@ $Global:WakeWordTrigger  = "$PSScriptRoot\.wake-trigger"
 
 function Start-WakeWordListener {
     if (-not $Global:SpeechRecognitionAvailable) {
-        Write-Warn "Speech recognition not available — wake word cannot start."
+        Write-Warn "Speech recognition not available  -  wake word cannot start."
         Pause-Menu; return
     }
     if ($Global:WakeWordActive) {
@@ -5527,7 +5527,7 @@ function Start-WakeWordListener {
         $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
         $recognizer.SetInputToDefaultAudioDevice()
 
-        # Constrained grammar — only listen for these exact phrases
+        # Constrained grammar  -  only listen for these exact phrases
         $choices = New-Object System.Speech.Recognition.Choices
         $choices.Add("hey cerebro")
         $choices.Add("cerebro")
@@ -5586,7 +5586,7 @@ function Stop-WakeWordListener {
 # After wake word, listens for a command and routes to the right action
 # -----------------------------
 
-# Full command routing table — maps spoken keywords to actions
+# Full command routing table  -  maps spoken keywords to actions
 $Global:VoiceCommands = @(
     # System / Services
     @{ Keywords=@("system status","check status","cerebro status","what is the status")       ; Action="Show-SystemStatus" }
@@ -5611,10 +5611,10 @@ $Global:VoiceCommands = @(
     @{ Keywords=@("devops","dev ops control","proxmox","terraform","ansible")                  ; Action="DevOps-Menu" }
     @{ Keywords=@("ai tools","dev tools","development tools")                                  ; Action="AIDevTools-Menu" }
     @{ Keywords=@("agent map","show agents","list agents","show roster")                       ; Action="Show-AgentMap" }
-    @{ Keywords=@("backup","back up","restore")                                                ; Action="# Backup (no direct function — go to AI tools)" }
+    @{ Keywords=@("backup","back up","restore")                                                ; Action="# Backup (no direct function  -  go to AI tools)" }
 )
 
-# Agent launch keywords — "launch forge", "activate beast", "use cyclops" etc.
+# Agent launch keywords  -  "launch forge", "activate beast", "use cyclops" etc.
 $Global:VoiceAgentKeywords = @("launch","activate","start agent","use","run","open","wake up","call","bring up","switch to","talk to","chat with","speak to")
 
 function Invoke-VoiceCommand {
@@ -5639,7 +5639,7 @@ function Invoke-VoiceCommand {
         if ($agentMatch) { break }
     }
 
-    # Also match agent names directly without a verb — "forge", "professor x", etc.
+    # Also match agent names directly without a verb  -  "forge", "professor x", etc.
     if (-not $agentMatch) {
         foreach ($agentName in $Agents.Keys) {
             $shortName = $agentName.ToLower().Replace("-"," ")
@@ -5731,7 +5731,7 @@ function Invoke-VoiceCommand {
 }
 
 function Test-WakeWordTriggered {
-    # Called each time the main menu loop runs — checks for trigger file
+    # Called each time the main menu loop runs  -  checks for trigger file
     if (-not $Global:WakeWordActive) { return }
     if (Test-Path $Global:WakeWordTrigger) {
         $phrase = Get-Content $Global:WakeWordTrigger -Raw -ErrorAction SilentlyContinue
@@ -5748,7 +5748,7 @@ function Test-WakeWordTriggered {
                 Write-Host "  [You said: '$command']" -ForegroundColor Cyan
                 Invoke-VoiceCommand -CommandText $command
             } else {
-                # No voice heard — drop into text command entry
+                # No voice heard  -  drop into text command entry
                 Write-Host ""
                 $command = Read-Host "  Command (or Enter for voice chat)"
                 if ([string]::IsNullOrWhiteSpace($command)) {
@@ -5782,11 +5782,11 @@ function CEREBRO-ChatMode {
     }
 
     Show-Header
-    Write-Host "=== CEREBRO Conversation — $AgentName ===" -ForegroundColor Yellow
+    Write-Host "=== CEREBRO Conversation  -  $AgentName ===" -ForegroundColor Yellow
     if ($VoiceInput) {
-        Write-Host "  Voice mode ON  — speak after [Listening...] appears" -ForegroundColor Green
+        Write-Host "  Voice mode ON   -  speak after [Listening...] appears" -ForegroundColor Green
     } else {
-        Write-Host "  Text mode — type your message, or 'exit' to leave" -ForegroundColor DarkGray
+        Write-Host "  Text mode  -  type your message, or 'exit' to leave" -ForegroundColor DarkGray
     }
     Write-Host "  Type 'switch' to change agent   'clear' to reset history" -ForegroundColor DarkGray
     Write-Host "  Type 'voice on' / 'voice off' to toggle microphone input" -ForegroundColor DarkGray
@@ -5805,7 +5805,7 @@ function CEREBRO-ChatMode {
             if ($userInput) {
                 Write-Host $userInput -ForegroundColor White
             } else {
-                Write-Host "(no speech detected — type your message or say something)" -ForegroundColor DarkGray
+                Write-Host "(no speech detected  -  type your message or say something)" -ForegroundColor DarkGray
                 $userInput = Read-Host ""
             }
         } else {
@@ -5882,7 +5882,7 @@ function CEREBRO-ChatMode {
             Write-Host $response -ForegroundColor White
             Add-AgentHistory -Agent $AgentName -Role "assistant" -Content $response
 
-            # Speak — truncate very long responses for voice
+            # Speak  -  truncate very long responses for voice
             $speakText = if ($response.Length -gt 600) {
                 $response.Substring(0, 600) + "... response continues on screen."
             } else { $response }
@@ -5908,7 +5908,7 @@ function Chat-Menu {
         Write-Host ""
         if ($Global:SpeechRecognitionAvailable) {
             Write-Host "6. VOICE conversation with Professor-X" -ForegroundColor Green
-            Write-Host "7. VOICE conversation — choose agent"   -ForegroundColor Green
+            Write-Host "7. VOICE conversation  -  choose agent"   -ForegroundColor Green
         } else {
             Write-Host "6. Voice input not available (System.Speech not found)" -ForegroundColor DarkGray
         }
@@ -5969,7 +5969,7 @@ function Chat-Menu {
 function Agent-Category-Lightning {
     do {
         Show-Header
-        Write-Host "=== LIGHTNING FAST — Tiny Models (runs on any hardware) ===" -ForegroundColor Yellow
+        Write-Host "=== LIGHTNING FAST  -  Tiny Models (runs on any hardware) ===" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "1. Dazzler      - llama3.2:1b  (~1GB)   - Absolute fastest, trivial lookups"
         Write-Host "2. Jubilee      - llama3.2:3b  (~2GB)   - Ultra-fast, young and snappy"
@@ -5990,7 +5990,7 @@ function Agent-Category-Lightning {
 function Agent-Category-Core {
     do {
         Show-Header
-        Write-Host "=== CORE TEAM — 7-9B Workhorses (runs on 16GB+ RAM) ===" -ForegroundColor Cyan
+        Write-Host "=== CORE TEAM  -  7-9B Workhorses (runs on 16GB+ RAM) ===" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "1.  Professor-X - llama3.1:8b      - Strategy & planning"
         Write-Host "2.  Forge       - qwen2.5-coder:7b - Coding & infrastructure"
@@ -6033,7 +6033,7 @@ function Agent-Category-Core {
 function Agent-Category-Enhanced {
     do {
         Show-Header
-        Write-Host "=== ENHANCED — 10-22B Models (runs on 24-32GB RAM) ===" -ForegroundColor DarkCyan
+        Write-Host "=== ENHANCED  -  10-22B Models (runs on 24-32GB RAM) ===" -ForegroundColor DarkCyan
         Write-Host ""
         Write-Host "1. Gambit      - mistral-nemo:12b   (~7GB)  - Long context conversation"
         Write-Host "2. Cable       - nous-hermes2:10.7b (~6GB)  - Precise instruction following"
@@ -6062,7 +6062,7 @@ function Agent-Category-Enhanced {
 function Agent-Category-Vision {
     do {
         Show-Header
-        Write-Host "=== VISION AGENTS — Multimodal Models ===" -ForegroundColor Magenta
+        Write-Host "=== VISION AGENTS  -  Multimodal Models ===" -ForegroundColor Magenta
         Write-Host ""
         Write-Host "1. Scout    - llava:7b               (~4.7GB) - Standard vision agent"
         Write-Host "2. Rogue    - llava:13b              (~8GB)   - Enhanced vision detail"
@@ -6083,7 +6083,7 @@ function Agent-Category-Vision {
 function Agent-Category-HeavyHitters {
     do {
         Show-Header
-        Write-Host "=== HEAVY HITTERS — 26-70B Models (needs 48GB+ RAM or GPU) ===" -ForegroundColor Red
+        Write-Host "=== HEAVY HITTERS  -  26-70B Models (needs 48GB+ RAM or GPU) ===" -ForegroundColor Red
         Write-Host ""
         Write-Host "1. Legion     - mixtral:8x7b    (~26GB) - Mixture of experts MoE"
         Write-Host "2. Emma-Frost - command-r:35b   (~20GB) - 128K context long documents"
@@ -6109,7 +6109,7 @@ function Agent-Category-HeavyHitters {
 function Agent-Category-Titans {
     do {
         Show-Header
-        Write-Host "=== TITANS — 100B+ Models (upgrade required: 96GB+ RAM) ===" -ForegroundColor DarkRed
+        Write-Host "=== TITANS  -  100B+ Models (upgrade required: 96GB+ RAM) ===" -ForegroundColor DarkRed
         Write-Host ""
         Write-Host "1. Onslaught  - mixtral:8x22b       (~80GB)  - Largest MoE model"
         Write-Host "2. Apocalypse - command-r-plus:104b (~60GB)  - 104B ultimate context"
@@ -6128,7 +6128,7 @@ function Agent-Category-Titans {
 
 function Show-AgentMenu {
     Show-Header
-    Write-Info "X-Agent Launcher — 34 Agents"
+    Write-Info "X-Agent Launcher  -  34 Agents"
     Write-Info "-----------------------------"
     Write-Host "1. Lightning Fast    - Dazzler, Jubilee, Nightcrawler (1-3B)" -ForegroundColor Yellow
     Write-Host "2. Core Team         - 14 agents, 7-10B workhorses"           -ForegroundColor Cyan
@@ -6222,7 +6222,7 @@ function Show-MainMenu {
     Write-Host ""
     if ($EnableVoice)  { Write-OK   "Voice  : ON"  } else { Write-Warn "Voice  : OFF" }
     if ($EnableSounds) { Write-OK   "Sounds : ON"  } else { Write-Warn "Sounds : OFF" }
-    if ($Global:WakeWordActive) { Write-OK "Wake Word : ACTIVE — say 'Hey CEREBRO'" } else { Write-Warn "Wake Word : OFF" }
+    if ($Global:WakeWordActive) { Write-OK "Wake Word : ACTIVE  -  say 'Hey CEREBRO'" } else { Write-Warn "Wake Word : OFF" }
 }
 
 CHAMP-Greeting
