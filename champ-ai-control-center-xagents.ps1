@@ -4972,6 +4972,233 @@ function IntelHub-Menu {
     } while ($c -ne "11")
 }
 
+# ============================================================
+# CEREBRO CONVERSATION MODE
+# Text chat and voice conversation with X-Agents
+# ============================================================
+
+# Try to load speech recognition assembly (Windows built-in)
+$Global:SpeechRecognitionAvailable = $false
+try {
+    Add-Type -AssemblyName System.Speech -ErrorAction Stop
+    $Global:SpeechRecognitionAvailable = $true
+} catch {}
+
+function Invoke-SpeechRecognition {
+    # Returns recognised text string, or $null if failed/timeout
+    if (-not $Global:SpeechRecognitionAvailable) { return $null }
+    try {
+        $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+        $recognizer.SetInputToDefaultAudioDevice()
+        $grammar = New-Object System.Speech.Recognition.DictationGrammar
+        $recognizer.LoadGrammar($grammar)
+        $recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(5)
+        $recognizer.BabbleTimeout         = [TimeSpan]::FromSeconds(3)
+        $recognizer.EndSilenceTimeout     = [TimeSpan]::FromSeconds(2)
+        Write-Host "  [Listening...]" -ForegroundColor Green
+        $result = $recognizer.Recognize([TimeSpan]::FromSeconds(15))
+        $recognizer.Dispose()
+        if ($result -and $result.Text) { return $result.Text }
+        return $null
+    } catch {
+        return $null
+    }
+}
+
+function CEREBRO-ChatMode {
+    param(
+        [string]$AgentName   = "Professor-X",
+        [bool]$VoiceInput    = $false
+    )
+
+    $modelInfo = $Agents[$AgentName]
+    if (-not $modelInfo) {
+        # Default to Nightcrawler for general chat if agent not found
+        $AgentName = "Nightcrawler"
+        $modelInfo = $Agents[$AgentName]
+    }
+
+    $model  = $modelInfo.Model
+    $system = if ($AgentSystemPrompts[$AgentName]) {
+        $AgentSystemPrompts[$AgentName]
+    } else {
+        $modelInfo.Role
+    }
+
+    Show-Header
+    Write-Host "=== CEREBRO Conversation — $AgentName ===" -ForegroundColor Yellow
+    if ($VoiceInput) {
+        Write-Host "  Voice mode ON  — speak after [Listening...] appears" -ForegroundColor Green
+    } else {
+        Write-Host "  Text mode — type your message, or 'exit' to leave" -ForegroundColor DarkGray
+    }
+    Write-Host "  Type 'switch' to change agent   'clear' to reset history" -ForegroundColor DarkGray
+    Write-Host "  Type 'voice on' / 'voice off' to toggle microphone input" -ForegroundColor DarkGray
+    Write-Host ""
+
+    Speak-CHAMP "CEREBRO conversation mode active. You are now speaking with $AgentName. How can I help you, Carnell?"
+
+    while ($true) {
+        Write-Host ""
+        Write-Host "Carnell > " -ForegroundColor Cyan -NoNewline
+
+        $userInput = $null
+
+        if ($VoiceInput) {
+            $userInput = Invoke-SpeechRecognition
+            if ($userInput) {
+                Write-Host $userInput -ForegroundColor White
+            } else {
+                Write-Host "(no speech detected — type your message or say something)" -ForegroundColor DarkGray
+                $userInput = Read-Host ""
+            }
+        } else {
+            $userInput = Read-Host ""
+        }
+
+        if ([string]::IsNullOrWhiteSpace($userInput)) { continue }
+
+        # Commands
+        switch ($userInput.ToLower().Trim()) {
+            "exit"       { Speak-CHAMP "Ending conversation. Goodbye, Carnell."; return }
+            "quit"       { Speak-CHAMP "Ending conversation. Goodbye, Carnell."; return }
+            "bye"        { Speak-CHAMP "Goodbye, Carnell."; return }
+            "clear"      {
+                Clear-AgentHistory -Agent $AgentName
+                Speak-CHAMP "Conversation history cleared. Fresh start, Carnell."
+                continue
+            }
+            "voice on"   {
+                if ($Global:SpeechRecognitionAvailable) {
+                    $VoiceInput = $true
+                    Speak-CHAMP "Voice input enabled. I am listening, Carnell."
+                } else {
+                    Write-Warn "Speech recognition not available on this system."
+                }
+                continue
+            }
+            "voice off"  {
+                $VoiceInput = $false
+                Speak-CHAMP "Voice input disabled. Back to text mode."
+                continue
+            }
+            "switch"     {
+                Write-Host ""
+                Write-Host "Available agents:" -ForegroundColor Yellow
+                $agentNames = $Agents.Keys | Sort-Object
+                $i = 1
+                foreach ($a in $agentNames) { Write-Host "  $i. $a"; $i++ }
+                $pick = Read-Host "Agent number"
+                if ($pick -match '^\d+$') {
+                    $idx = [int]$pick - 1
+                    $newAgent = @($agentNames)[$idx]
+                    if ($newAgent) {
+                        $AgentName = $newAgent
+                        $modelInfo = $Agents[$AgentName]
+                        $model     = $modelInfo.Model
+                        $system    = if ($AgentSystemPrompts[$AgentName]) { $AgentSystemPrompts[$AgentName] } else { $modelInfo.Role }
+                        Speak-CHAMP "Switching to $AgentName. Standing by, Carnell."
+                    }
+                }
+                continue
+            }
+        }
+
+        # Build context from history
+        $history = Get-AgentHistory -Agent $AgentName -MaxEntries 10
+        $contextBlock = ""
+        if ($history.Count -gt 0) {
+            $contextBlock = "Previous conversation:`n"
+            foreach ($h in $history) { $contextBlock += "$($h.role.ToUpper()): $($h.content)`n" }
+            $contextBlock += "`nCurrent message:"
+        }
+        $fullPrompt = if ($contextBlock) { "$contextBlock`n$userInput" } else { $userInput }
+
+        # Save user turn
+        Add-AgentHistory -Agent $AgentName -Role "user" -Content $userInput
+
+        # Get response
+        Write-Host ""
+        Write-Host "$AgentName > " -ForegroundColor Yellow -NoNewline
+        $response = Invoke-OllamaWithSystem -Model $model -SystemPrompt $system -UserPrompt $fullPrompt
+
+        if ($response) {
+            Write-Host $response -ForegroundColor White
+            Add-AgentHistory -Agent $AgentName -Role "assistant" -Content $response
+
+            # Speak — truncate very long responses for voice
+            $speakText = if ($response.Length -gt 600) {
+                $response.Substring(0, 600) + "... response continues on screen."
+            } else { $response }
+            Speak-CHAMP $speakText
+
+            Write-ActivityLog "CEREBRO Chat [$AgentName]: $($userInput.Substring(0,[Math]::Min(60,$userInput.Length)))"
+        } else {
+            Speak-CHAMP "I did not get a response. Please check that Ollama is running, Carnell."
+        }
+    }
+}
+
+function Chat-Menu {
+    do {
+        Show-Header
+        Write-Host "=== CEREBRO Conversation Mode ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. Chat with Professor-X  (strategy & planning)"    -ForegroundColor Cyan
+        Write-Host "2. Chat with Forge        (code & dev)"             -ForegroundColor Cyan
+        Write-Host "3. Chat with Gambit       (long context chat)"      -ForegroundColor Cyan
+        Write-Host "4. Chat with Nightcrawler (quick questions)"        -ForegroundColor Cyan
+        Write-Host "5. Chat with any agent    (choose from full roster)" -ForegroundColor Cyan
+        Write-Host ""
+        if ($Global:SpeechRecognitionAvailable) {
+            Write-Host "6. VOICE conversation with Professor-X" -ForegroundColor Green
+            Write-Host "7. VOICE conversation — choose agent"   -ForegroundColor Green
+        } else {
+            Write-Host "6. Voice input not available (System.Speech not found)" -ForegroundColor DarkGray
+        }
+        Write-Host ""
+        Write-Host "8. Back"
+        Write-Host ""
+        Write-Host "  In conversation: type 'exit' to leave, 'switch' to change agent," -ForegroundColor DarkGray
+        Write-Host "  'voice on/off' to toggle mic, 'clear' to reset memory." -ForegroundColor DarkGray
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { CEREBRO-ChatMode -AgentName "Professor-X" -VoiceInput $false }
+            "2" { CEREBRO-ChatMode -AgentName "Forge"       -VoiceInput $false }
+            "3" { CEREBRO-ChatMode -AgentName "Gambit"      -VoiceInput $false }
+            "4" { CEREBRO-ChatMode -AgentName "Nightcrawler"-VoiceInput $false }
+            "5" {
+                $agentNames = $Agents.Keys | Sort-Object
+                $i = 1; foreach ($a in $agentNames) { Write-Host "$i. $a"; $i++ }
+                $pick = Read-Host "Agent number"
+                if ($pick -match '^\d+$') {
+                    $agent = @($agentNames)[[int]$pick - 1]
+                    if ($agent) { CEREBRO-ChatMode -AgentName $agent -VoiceInput $false }
+                }
+            }
+            "6" {
+                if ($Global:SpeechRecognitionAvailable) {
+                    CEREBRO-ChatMode -AgentName "Professor-X" -VoiceInput $true
+                } else { Write-Warn "Voice input not available."; Pause-Menu }
+            }
+            "7" {
+                if ($Global:SpeechRecognitionAvailable) {
+                    $agentNames = $Agents.Keys | Sort-Object
+                    $i = 1; foreach ($a in $agentNames) { Write-Host "$i. $a"; $i++ }
+                    $pick = Read-Host "Agent number"
+                    if ($pick -match '^\d+$') {
+                        $agent = @($agentNames)[[int]$pick - 1]
+                        if ($agent) { CEREBRO-ChatMode -AgentName $agent -VoiceInput $true }
+                    }
+                } else { Write-Warn "Voice input not available."; Pause-Menu }
+            }
+            "8" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "8")
+}
+
 # -----------------------------
 # Sub-menus
 # -----------------------------
@@ -5224,7 +5451,8 @@ function Show-MainMenu {
     Write-Host "19. AI Development Tools" -ForegroundColor Cyan
     Write-Host "20. DevOps Control Panel" -ForegroundColor Magenta
     Write-Host "21. Intelligence Hub" -ForegroundColor Yellow
-    Write-Host "22. Exit"
+    Write-Host "22. CEREBRO Chat / Voice Conversation" -ForegroundColor Green
+    Write-Host "23. Exit"
     Write-Host ""
     if ($EnableVoice)  { Write-OK   "Voice  : ON"  } else { Write-Warn "Voice  : OFF" }
     if ($EnableSounds) { Write-OK   "Sounds : ON"  } else { Write-Warn "Sounds : OFF" }
@@ -5264,7 +5492,8 @@ do {
         "19" { AIDevTools-Menu }
         "20" { DevOps-Menu }
         "21" { IntelHub-Menu }
-        "22" { Speak-CHAMP "CEREBRO shutting down. Goodbye, Champ."; Write-ActivityLog "CHAMP AI Control Center exited"; Write-Host "Exiting..." }
+        "22" { Chat-Menu }
+        "23" { Speak-CHAMP "CEREBRO shutting down. Goodbye, Carnell. Until next time."; Write-ActivityLog "CHAMP AI Control Center exited"; Write-Host "Exiting..." }
         default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
     }
-} while ($choice -ne "22")
+} while ($choice -ne "23")
