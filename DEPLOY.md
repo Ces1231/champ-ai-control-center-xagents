@@ -151,7 +151,21 @@ Models pulled:
 1. Start Docker Desktop and wait for it to finish loading.
 2. In CHAMP AI, select **8** — Start Open WebUI.
 3. Select **12** — Open Open WebUI Dashboard.
-4. Create your admin account on first visit to `http://localhost:3000`.
+4. Create your admin account on first visit to `http://champ-ai-Control-center:1969`.
+
+> **Hosts file:** On first launch CHAMP AI automatically detects whether `champ-ai-Control-center` resolves locally. If not, it asks you to add the entry and launches an elevated PowerShell window to write it — approve the UAC prompt and the hostname is set permanently. You can also run this any time from **Wolverine Recovery Center → option 9**.
+
+---
+
+## Where to Access the Dashboard
+
+Once Open WebUI is running, open your browser to:
+
+```text
+http://champ-ai-Control-center:1969
+```
+
+CHAMP AI will also print this URL in the terminal every time you start Open WebUI (option 8), and option 12 opens it directly in your default browser.
 
 ---
 
@@ -161,7 +175,7 @@ Run a quick health check from the main menu:
 
 - **Option 1** — CEREBRO System Status: RAM, disk, Docker, Ollama, loaded models.
 - **Option 15 → 1** — Wolverine Health Scan: service-by-service green/yellow/red report.
-- **Option 19 → 9** — AI Services Port Dashboard: confirm Ollama (11434) and Open WebUI (3000) show ACTIVE.
+- **Option 19 → 9** — AI Services Port Dashboard: confirm Ollama (11434) and Open WebUI (1969) show ACTIVE.
 
 ---
 

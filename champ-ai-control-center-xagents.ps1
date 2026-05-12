@@ -9,7 +9,8 @@
 # User Config
 # -----------------------------
 $OpenWebUIContainer = "champ-open-webui"
-$OpenWebUIPort = "3000"
+$OpenWebUIPort = "1969"
+$OpenWebUIHost = "champ-ai-Control-center"
 $OpenWebUIImage = "ghcr.io/open-webui/open-webui:main"
 $DefaultProjectPath = "$env:USERPROFILE\OneDrive\Documents\01_Projects"
 $ActivityLogPath = "$PSScriptRoot\CHAMP-activity.log"
@@ -522,7 +523,7 @@ function Register-AgentModels {
     Write-Host ""
     if ($created.Count -gt 0) {
         Write-OK "Registered: $($created -join ', ')"
-        Write-Info "These agents now appear by name in Open WebUI at http://localhost:$OpenWebUIPort"
+        Write-Info "These agents now appear by name in Open WebUI at http://${OpenWebUIHost}:$OpenWebUIPort"
     }
     if ($failed.Count -gt 0) {
         Write-Warn "Failed: $($failed -join ', ')"
@@ -703,7 +704,9 @@ function Start-OpenWebUI {
         docker run -d --name $OpenWebUIContainer -p ${OpenWebUIPort}:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data $OpenWebUIImage
         Speak-CHAMP "Open WebUI has been created and started."
     }
-    Write-OK "Dashboard: http://localhost:$OpenWebUIPort"
+    Write-OK "Dashboard: http://${OpenWebUIHost}:$OpenWebUIPort"
+    Write-Info "Select option 12 from the main menu, or open your browser to:"
+    Write-Host "  http://${OpenWebUIHost}:$OpenWebUIPort" -ForegroundColor Cyan
     Play-SuccessSound
     Pause-Menu
 }
@@ -746,7 +749,64 @@ function Update-OpenWebUI {
     Pause-Menu
 }
 
-function Open-WebDashboard { Speak-CHAMP "Opening Open WebUI dashboard."; Start-Process "http://localhost:$OpenWebUIPort" }
+function Open-WebDashboard { Speak-CHAMP "Opening Open WebUI dashboard."; Start-Process "http://${OpenWebUIHost}:$OpenWebUIPort" }
+
+function Install-HostsEntry {
+    # Adds champ-ai-Control-center → 127.0.0.1 to the Windows hosts file.
+    # Requires elevation; if not elevated, re-launches this function as Administrator.
+    $hostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
+    $entry     = "127.0.0.1    $OpenWebUIHost"
+
+    $existing = Get-Content $hostsPath -ErrorAction SilentlyContinue | Where-Object { $_ -match [regex]::Escape($OpenWebUIHost) }
+    if ($existing) {
+        Write-OK "Hosts entry for '$OpenWebUIHost' already present — no change needed."
+        Pause-Menu
+        return
+    }
+
+    # Check if we are already running as Administrator
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    if ($isAdmin) {
+        try {
+            Add-Content -Path $hostsPath -Value "`n$entry" -Encoding ASCII
+            Write-OK "Hosts entry added: $entry"
+            Write-Info "Open WebUI will now be reachable at http://${OpenWebUIHost}:$OpenWebUIPort"
+        } catch {
+            Write-Error "Failed to write hosts file: $_"
+        }
+    } else {
+        Write-Warn "Administrator rights required to edit the hosts file."
+        Write-Info "Relaunching with elevation — approve the UAC prompt to continue."
+        $scriptBlock = "Add-Content -Path '$hostsPath' -Value \"`n$entry\" -Encoding ASCII; Write-Host 'Hosts entry added.' -ForegroundColor Green; Start-Sleep 3"
+        Start-Process pwsh -ArgumentList "-NoProfile -Command `"$scriptBlock`"" -Verb RunAs -Wait
+        Write-OK "Done. '$OpenWebUIHost' now resolves to 127.0.0.1."
+    }
+    Pause-Menu
+}
+
+function Test-HostsEntry {
+    # Returns $true if the champ-ai-Control-center entry already exists.
+    $hostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
+    $lines = Get-Content $hostsPath -ErrorAction SilentlyContinue
+    return ($lines | Where-Object { $_ -match [regex]::Escape($OpenWebUIHost) }).Count -gt 0
+}
+
+function Ensure-HostsEntry {
+    # Called once on startup. Prompts the user to add the entry only if missing.
+    if (-not (Test-HostsEntry)) {
+        Show-Header
+        Write-Warn "CHAMP AI uses http://${OpenWebUIHost}:$OpenWebUIPort for the Open WebUI dashboard."
+        Write-Warn "The hostname '$OpenWebUIHost' is not yet in your hosts file."
+        Write-Host ""
+        $ans = Read-Host "Add hosts entry now? This requires a UAC prompt. (Y/N)"
+        if ($ans -match '^[Yy]') {
+            Install-HostsEntry
+        } else {
+            Write-Info "Skipped. You can add it later from Wolverine Recovery Center → option 9, or run Install-HostsEntry manually."
+        }
+    }
+}
 
 function Show-DockerContainers {
     Show-Header
@@ -832,6 +892,431 @@ function Open-VSCodeProject {
     if (-not (Test-Path $path)) { Speak-CHAMP "Project path does not exist."; Write-Err "Path does not exist: $path"; Play-ErrorSound; Pause-Menu; return }
     if (Test-CommandExists "code") { Speak-CHAMP "Opening Visual Studio Code."; code $path; Play-SuccessSound } else { Speak-CHAMP "Visual Studio Code command line was not found."; Play-ErrorSound }
     Pause-Menu
+}
+
+# ============================================================
+# VS CODE INTEGRATION — Full suite
+# ============================================================
+
+function Test-VSCode {
+    if (-not (Test-CommandExists "code")) {
+        Write-Err "VS Code 'code' command not found."
+        Write-Info "Install VS Code and ensure it is added to PATH:"
+        Write-Info "  VS Code → Settings → 'Shell Command: Install code in PATH'"
+        Pause-Menu; return $false
+    }
+    return $true
+}
+
+function VSCode-OpenFile {
+    Show-Header
+    Write-Host "=== Open File / Folder in VS Code ===" -ForegroundColor Cyan
+    Write-Host ""
+    $path = Read-Host "File or folder path (Enter for default project)"
+    if ([string]::IsNullOrWhiteSpace($path)) { $path = $DefaultProjectPath }
+    if (-not (Test-Path $path)) { Write-Err "Path not found: $path"; Pause-Menu; return }
+    if (-not (Test-VSCode)) { return }
+    code $path
+    Speak-CHAMP "Opened in VS Code."
+    Write-ActivityLog "VS Code: opened $path"
+    Pause-Menu
+}
+
+function VSCode-OpenFile-Reuse {
+    # Open a file in the existing VS Code window (reuse window)
+    Show-Header
+    Write-Host "=== Open File in Existing VS Code Window ===" -ForegroundColor Cyan
+    $path = Read-Host "File path"
+    if (-not (Test-Path $path)) { Write-Err "File not found."; Pause-Menu; return }
+    if (-not (Test-VSCode)) { return }
+    code --reuse-window $path
+    Speak-CHAMP "File opened in existing VS Code window."
+    Pause-Menu
+}
+
+function VSCode-ListExtensions {
+    Show-Header
+    Write-Host "=== Installed VS Code Extensions ===" -ForegroundColor Cyan
+    Write-Host ""
+    if (-not (Test-VSCode)) { return }
+    $extensions = code --list-extensions 2>$null
+    if ($extensions) {
+        $extensions | ForEach-Object { Write-Host "  $_" -ForegroundColor White }
+        Write-Host ""
+        Write-OK "$($extensions.Count) extensions installed."
+    } else {
+        Write-Warn "No extensions found or VS Code not accessible."
+    }
+    Pause-Menu
+}
+
+function VSCode-InstallExtension {
+    Show-Header
+    Write-Host "=== Install VS Code Extension ===" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Info "Common extension IDs:"
+    Write-Host "  ms-python.python              — Python"
+    Write-Host "  ms-vscode.powershell          — PowerShell"
+    Write-Host "  ms-azuretools.vscode-docker   — Docker"
+    Write-Host "  hashicorp.terraform           — Terraform"
+    Write-Host "  redhat.ansible                — Ansible"
+    Write-Host "  github.copilot                — GitHub Copilot"
+    Write-Host "  continue.continue             — Continue AI (local LLM)"
+    Write-Host "  ms-vscode-remote.remote-wsl   — Remote WSL"
+    Write-Host "  esbenp.prettier-vscode        — Prettier"
+    Write-Host "  dbaeumer.vscode-eslint        — ESLint"
+    Write-Host "  eamodio.gitlens               — GitLens"
+    Write-Host ""
+    if (-not (Test-VSCode)) { return }
+    $extId = Read-Host "Extension ID to install"
+    if ([string]::IsNullOrWhiteSpace($extId)) { Pause-Menu; return }
+    Write-Info "Installing $extId..."
+    code --install-extension $extId --force
+    Write-OK "Done. Reload VS Code to activate."
+    Write-ActivityLog "VS Code: installed extension $extId"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function VSCode-UninstallExtension {
+    Show-Header
+    Write-Host "=== Uninstall VS Code Extension ===" -ForegroundColor Cyan
+    Write-Host ""
+    if (-not (Test-VSCode)) { return }
+    $extensions = code --list-extensions 2>$null
+    if (-not $extensions) { Write-Warn "No extensions found."; Pause-Menu; return }
+    $i = 1
+    foreach ($e in $extensions) { Write-Host "$i. $e"; $i++ }
+    Write-Host ""
+    $pick = Read-Host "Number to uninstall (or type ID directly)"
+    $extId = if ($pick -match '^\d+$') { @($extensions)[[int]$pick - 1] } else { $pick }
+    if (-not $extId) { Pause-Menu; return }
+    $confirm = Read-Host "Uninstall '$extId'? (y/n)"
+    if ($confirm -eq "y") {
+        code --uninstall-extension $extId
+        Write-OK "Uninstalled $extId."
+        Write-ActivityLog "VS Code: uninstalled extension $extId"
+    }
+    Pause-Menu
+}
+
+function VSCode-ForgeGenerateAndOpen {
+    # Forge generates code, saves to file, opens directly in VS Code
+    Show-Header
+    Write-Host "=== Forge → Generate Code → Open in VS Code ===" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Languages: ps1, py, js, ts, html, css, go, rs, sh, sql, tf, yaml, json, cs"
+    $lang = Read-Host "Language/extension (e.g. py)"
+    $task = Read-Host "Describe what you want Forge to build"
+    if ([string]::IsNullOrWhiteSpace($task)) { Pause-Menu; return }
+
+    $system = "You are Forge, an expert $lang developer. Write complete, working $lang code. Output ONLY the code — no explanation, no markdown fences, no comments unless the code requires them."
+    Write-Info "Forge is generating $lang code..."
+    $code = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt $task
+    if (-not $code) { Write-Err "Forge returned no code."; Pause-Menu; return }
+
+    # Strip any accidental fences
+    $code = Remove-CodeFences $code
+
+    # Save file
+    $sessDir = "$PSScriptRoot\CHAMP-Sessions"
+    if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory -Path $sessDir -Force | Out-Null }
+    $filename = Read-Host "Filename (without extension, Enter for 'forge-output')"
+    if ([string]::IsNullOrWhiteSpace($filename)) { $filename = "forge-output" }
+    $outPath = "$sessDir\$filename.$lang"
+    $code | Set-Content $outPath -Encoding UTF8
+
+    Write-OK "Saved: $outPath"
+    Write-Host ""
+    Write-Host $code -ForegroundColor White
+
+    # Open in VS Code
+    if (Test-VSCode) {
+        code $outPath
+        Speak-CHAMP "Forge has generated your $lang file and opened it in VS Code."
+    }
+    Write-ActivityLog "VS Code: Forge generated $filename.$lang"
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function VSCode-ForgeReviewOpen {
+    # Open a file, Forge reviews it, show results in VS Code output
+    Show-Header
+    Write-Host "=== Open File + Forge Code Review ===" -ForegroundColor Cyan
+    Write-Host ""
+    $path = Read-Host "File to review"
+    if (-not (Test-Path $path)) { Write-Err "File not found."; Pause-Menu; return }
+    $content = Get-Content $path -Raw -Encoding UTF8
+    if ($content.Length -gt 8000) { $content = $content.Substring(0,8000) + "`n[...truncated]" }
+    $ext = [System.IO.Path]::GetExtension($path)
+
+    # Open in VS Code first
+    if (Test-VSCode) { code $path }
+
+    # Forge review
+    Write-Info "Forge is reviewing the file..."
+    $review = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model `
+        -SystemPrompt "You are a senior code reviewer. Review this $ext file. Identify bugs, improvements, security issues, and style problems. Be concise and use bullet points." `
+        -UserPrompt $content
+
+    # Save review as a companion .review.md file
+    $reviewPath = "$path.review.md"
+    "# Forge Code Review — $(Split-Path $path -Leaf)`n`n$review" | Set-Content $reviewPath -Encoding UTF8
+
+    Write-Host ""
+    Write-Host $review -ForegroundColor White
+    Write-OK "Review saved: $reviewPath"
+
+    # Open review file in VS Code split view
+    if (Test-VSCode) {
+        code --reuse-window $reviewPath
+        Speak-CHAMP "File opened and Forge review is ready in VS Code."
+    }
+    Write-ActivityLog "VS Code: Forge reviewed $(Split-Path $path -Leaf)"
+    Pause-Menu
+}
+
+function VSCode-NewProject {
+    Show-Header
+    Write-Host "=== New Project Generator ===" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Templates:"
+    Write-Host "1. Python script project (venv + main.py + requirements.txt)"
+    Write-Host "2. PowerShell module (module.psm1 + manifest)"
+    Write-Host "3. Node.js / TypeScript project (package.json + tsconfig)"
+    Write-Host "4. Docker project (Dockerfile + docker-compose.yml + .env)"
+    Write-Host "5. Terraform project (main.tf + variables.tf + outputs.tf)"
+    Write-Host "6. FastAPI project (main.py + requirements.txt + Dockerfile)"
+    Write-Host "7. Custom — describe your project, Forge designs the structure"
+    Write-Host ""
+    $t = Read-Host "Template number"
+    $projName = Read-Host "Project name"
+    if ([string]::IsNullOrWhiteSpace($projName)) { Pause-Menu; return }
+
+    $parent = Read-Host "Parent folder (Enter for default: $DefaultProjectPath)"
+    if ([string]::IsNullOrWhiteSpace($parent)) { $parent = $DefaultProjectPath }
+    $projPath = "$parent\$projName"
+
+    if (Test-Path $projPath) { Write-Warn "Folder already exists: $projPath" } else {
+        New-Item -ItemType Directory -Path $projPath -Force | Out-Null
+    }
+
+    switch ($t) {
+        "1" {
+            "# $projName`n" | Set-Content "$projPath\main.py" -Encoding UTF8
+            "# Requirements`n" | Set-Content "$projPath\requirements.txt" -Encoding UTF8
+            "# $projName`n`nPython project." | Set-Content "$projPath\README.md" -Encoding UTF8
+            python -m venv "$projPath\venv" 2>$null
+        }
+        "2" {
+            "# $projName PowerShell Module`n" | Set-Content "$projPath\$projName.psm1" -Encoding UTF8
+            New-ModuleManifest -Path "$projPath\$projName.psd1" -RootModule "$projName.psm1" -ModuleVersion "1.0.0" -ErrorAction SilentlyContinue
+        }
+        "3" {
+            @{ name=$projName; version="1.0.0"; scripts=@{build="tsc";start="node dist/index.js"} } | ConvertTo-Json | Set-Content "$projPath\package.json" -Encoding UTF8
+            '{"compilerOptions":{"target":"ES2020","module":"commonjs","outDir":"dist","strict":true}}' | Set-Content "$projPath\tsconfig.json" -Encoding UTF8
+            "// $projName`nconsole.log('Hello');" | Set-Content "$projPath\index.ts" -Encoding UTF8
+        }
+        "4" {
+            "FROM ubuntu:22.04`nRUN apt-get update`n" | Set-Content "$projPath\Dockerfile" -Encoding UTF8
+            "version: '3.8'`nservices:`n  app:`n    build: .`n" | Set-Content "$projPath\docker-compose.yml" -Encoding UTF8
+            "# Environment variables`n" | Set-Content "$projPath\.env" -Encoding UTF8
+        }
+        "5" {
+            'terraform {`n  required_version = ">= 1.0"`n}' | Set-Content "$projPath\main.tf" -Encoding UTF8
+            "# Variables`n" | Set-Content "$projPath\variables.tf" -Encoding UTF8
+            "# Outputs`n" | Set-Content "$projPath\outputs.tf" -Encoding UTF8
+        }
+        "6" {
+            "from fastapi import FastAPI`n`napp = FastAPI()`n`n@app.get('/')`ndef root():`n    return {'message': 'Hello from $projName'}`n" | Set-Content "$projPath\main.py" -Encoding UTF8
+            "fastapi`nuvicorn`n" | Set-Content "$projPath\requirements.txt" -Encoding UTF8
+            "FROM python:3.11-slim`nWORKDIR /app`nCOPY requirements.txt .`nRUN pip install -r requirements.txt`nCOPY . .`nCMD [`"uvicorn`",`"main:app`",`"--host`",`"0.0.0.0`",`"--port`",`"8000`"]`n" | Set-Content "$projPath\Dockerfile" -Encoding UTF8
+        }
+        "7" {
+            $desc = Read-Host "Describe your project"
+            $structure = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model `
+                -SystemPrompt "You are a software architect. Given a project description, list the files and folders to create and provide starter content for each key file. Be practical and concise." `
+                -UserPrompt "Project: $projName. Description: $desc"
+            Write-Host "`n$structure" -ForegroundColor White
+            $structure | Set-Content "$projPath\PROJECT-STRUCTURE.md" -Encoding UTF8
+        }
+    }
+
+    # Create .vscode folder with recommended settings
+    $vsDir = "$projPath\.vscode"
+    New-Item -ItemType Directory -Path $vsDir -Force | Out-Null
+    '{"recommendations":["ms-python.python","ms-vscode.powershell","esbenp.prettier-vscode"]}' | Set-Content "$vsDir\extensions.json" -Encoding UTF8
+
+    Write-OK "Project created: $projPath"
+    Write-ActivityLog "VS Code: new project $projName at $projPath"
+
+    # Open in VS Code
+    if (Test-VSCode) {
+        code $projPath
+        Speak-CHAMP "Project $projName created and opened in VS Code."
+    }
+    Play-SuccessSound
+    Pause-Menu
+}
+
+function VSCode-ExtensionRecommender {
+    Show-Header
+    Write-Host "=== Forge — Recommend Extensions for Your Project ===" -ForegroundColor Cyan
+    Write-Host ""
+    $desc = Read-Host "Describe your project or tech stack (e.g. 'Python FastAPI with Docker and PostgreSQL')"
+    if ([string]::IsNullOrWhiteSpace($desc)) { Pause-Menu; return }
+
+    $recs = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model `
+        -SystemPrompt "You are a VS Code expert. Given a project description, recommend the most useful VS Code extensions. For each, provide the exact extension ID (publisher.name format), the display name, and one sentence explaining why it helps. Format as a list." `
+        -UserPrompt $desc
+
+    Write-Host ""
+    Write-Host $recs -ForegroundColor White
+
+    $install = Read-Host "`nInstall any of these? Enter extension ID or press Enter to skip"
+    while (-not [string]::IsNullOrWhiteSpace($install)) {
+        if (Test-VSCode) {
+            code --install-extension $install --force
+            Write-OK "Installed: $install"
+        }
+        $install = Read-Host "Another ID (or Enter to finish)"
+    }
+    Write-ActivityLog "VS Code: extension recommendations for $desc"
+    Pause-Menu
+}
+
+function VSCode-SnippetGenerator {
+    Show-Header
+    Write-Host "=== Forge — Generate VS Code Snippet ===" -ForegroundColor Cyan
+    Write-Host ""
+    $lang   = Read-Host "Language (e.g. python, javascript, powershell)"
+    $desc   = Read-Host "Describe the snippet (e.g. 'FastAPI endpoint with error handling')"
+    $prefix = Read-Host "Snippet trigger prefix (e.g. 'fapiend')"
+
+    $snippetCode = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model `
+        -SystemPrompt "You are a VS Code snippet expert. Generate a VS Code snippet in JSON format for the given language and description. Use \$1, \$2 etc for tab stops and \$0 for final cursor. Output ONLY valid JSON for the snippet body, nothing else." `
+        -UserPrompt "Language: $lang. Description: $desc. Prefix: $prefix"
+
+    if (-not $snippetCode) { Write-Err "No snippet generated."; Pause-Menu; return }
+    Write-Host "`n$snippetCode" -ForegroundColor White
+
+    $save = Read-Host "Save to VS Code user snippets? (y/n)"
+    if ($save -eq "y") {
+        $snippetDir = "$env:APPDATA\Code\User\snippets"
+        if (-not (Test-Path $snippetDir)) { New-Item -ItemType Directory -Path $snippetDir -Force | Out-Null }
+        $snippetFile = "$snippetDir\$lang.json"
+        # Merge with existing or create new
+        if (Test-Path $snippetFile) {
+            Write-Info "Snippet file exists: $snippetFile"
+            Write-Info "Add the snippet manually to avoid overwriting existing snippets."
+        } else {
+            "{`"$desc`": $snippetCode}" | Set-Content $snippetFile -Encoding UTF8
+            Write-OK "Snippet saved: $snippetFile"
+        }
+        if (Test-VSCode) { code $snippetFile }
+    }
+    Write-ActivityLog "VS Code: snippet generated for $lang - $desc"
+    Pause-Menu
+}
+
+function VSCode-WorkspaceManager {
+    Show-Header
+    Write-Host "=== Workspace Manager ===" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "1. Open a .code-workspace file"
+    Write-Host "2. Create a new workspace from multiple folders"
+    Write-Host "3. Open VS Code settings.json"
+    Write-Host "4. Open VS Code keybindings.json"
+    Write-Host "5. Open VS Code extensions folder"
+    Write-Host "6. Back"
+    Write-Host ""
+    $c = Read-Host "Select"
+    switch ($c) {
+        "1" {
+            $wsPath = Read-Host "Path to .code-workspace file"
+            if (Test-Path $wsPath) { code $wsPath } else { Write-Err "File not found." }
+            Pause-Menu
+        }
+        "2" {
+            $folders = @()
+            Write-Info "Enter folder paths one by one. Empty line to finish."
+            do {
+                $f = Read-Host "Folder path"
+                if (-not [string]::IsNullOrWhiteSpace($f) -and (Test-Path $f)) { $folders += $f }
+            } while (-not [string]::IsNullOrWhiteSpace($f))
+            if ($folders.Count -gt 0) {
+                $wsName = Read-Host "Workspace name"
+                $wsContent = @{ folders = ($folders | ForEach-Object { @{ path = $_ } }) } | ConvertTo-Json -Depth 5
+                $wsFile = "$DefaultProjectPath\$wsName.code-workspace"
+                $wsContent | Set-Content $wsFile -Encoding UTF8
+                code $wsFile
+                Write-OK "Workspace created: $wsFile"
+            }
+            Pause-Menu
+        }
+        "3" {
+            $settingsPath = "$env:APPDATA\Code\User\settings.json"
+            if (-not (Test-Path $settingsPath)) { "{}" | Set-Content $settingsPath -Encoding UTF8 }
+            if (Test-VSCode) { code $settingsPath }
+            Pause-Menu
+        }
+        "4" {
+            $kbPath = "$env:APPDATA\Code\User\keybindings.json"
+            if (-not (Test-Path $kbPath)) { "[]" | Set-Content $kbPath -Encoding UTF8 }
+            if (Test-VSCode) { code $kbPath }
+            Pause-Menu
+        }
+        "5" {
+            $extPath = "$env:USERPROFILE\.vscode\extensions"
+            if (Test-VSCode) { code $extPath } else { explorer $extPath }
+            Pause-Menu
+        }
+        "6" { return }
+    }
+}
+
+function VSCode-Menu {
+    do {
+        Show-Header
+        Write-Host "=== VS Code Integration ===" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "--- Open ---" -ForegroundColor DarkGray
+        Write-Host "1. Open file / folder in VS Code"
+        Write-Host "2. Open file in existing VS Code window"
+        Write-Host "3. Workspace Manager (workspaces, settings, keybindings)"
+        Write-Host ""
+        Write-Host "--- Extensions ---" -ForegroundColor DarkGray
+        Write-Host "4. List installed extensions"
+        Write-Host "5. Install an extension"
+        Write-Host "6. Uninstall an extension"
+        Write-Host "7. Forge: recommend extensions for your project"
+        Write-Host ""
+        Write-Host "--- AI-Powered ---" -ForegroundColor DarkGray
+        Write-Host "8.  Forge: generate code and open in VS Code"   -ForegroundColor Yellow
+        Write-Host "9.  Forge: review open file and show in VS Code" -ForegroundColor Yellow
+        Write-Host "10. Forge: generate VS Code snippet"             -ForegroundColor Yellow
+        Write-Host "11. New project from template + open in VS Code" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "12. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1"  { VSCode-OpenFile }
+            "2"  { VSCode-OpenFile-Reuse }
+            "3"  { VSCode-WorkspaceManager }
+            "4"  { VSCode-ListExtensions }
+            "5"  { VSCode-InstallExtension }
+            "6"  { VSCode-UninstallExtension }
+            "7"  { VSCode-ExtensionRecommender }
+            "8"  { VSCode-ForgeGenerateAndOpen }
+            "9"  { VSCode-ForgeReviewOpen }
+            "10" { VSCode-SnippetGenerator }
+            "11" { VSCode-NewProject }
+            "12" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "12")
 }
 
 function Toggle-Voice  { Show-Header; $script:EnableVoice  = -not $script:EnableVoice;  if ($script:EnableVoice)  { Speak-CHAMP "Voice responses are now enabled." }  else { Write-Host "Voice responses are now disabled." };  Pause-Menu }
@@ -1337,7 +1822,7 @@ function Show-PortDashboard {
 
     $services = @(
         @{ Name = "Ollama API";      Port = 11434; URL = "http://localhost:11434" }
-        @{ Name = "Open WebUI";      Port = 3000;  URL = "http://localhost:3000"  }
+        @{ Name = "Open WebUI";      Port = 1969;  URL = "http://champ-ai-Control-center:1969"  }
         @{ Name = "Jupyter";         Port = 8888;  URL = "http://localhost:8888"  }
         @{ Name = "FastAPI (dev)";   Port = 8000;  URL = "http://localhost:8000"  }
         @{ Name = "Gradio";          Port = 7860;  URL = "http://localhost:7860"  }
@@ -5109,7 +5594,7 @@ $Global:VoiceCommands = @(
     @{ Keywords=@("list models","show models","what models","ollama models")                   ; Action="List-OllamaModels" }
     @{ Keywords=@("activity log","show log","open log","view log")                             ; Action="Show-ActivityLog" }
     @{ Keywords=@("live dashboard","dashboard","war room")                                     ; Action="Show-LiveDashboard" }
-    @{ Keywords=@("open vs code","open vscode","launch vs code","open code","visual studio")   ; Action="Open-VSCodeProject" }
+    @{ Keywords=@("open vs code","open vscode","launch vs code","open code","visual studio")   ; Action="VSCode-Menu" }
     @{ Keywords=@("clipboard","send clipboard","clipboard ai")                                 ; Action="Invoke-ClipboardAI" }
     @{ Keywords=@("wolverine","health scan","health check","recover services","watchdog")      ; Action="Wolverine-HealthScan" }
     @{ Keywords=@("pull all models","download all models","update all models")                 ; Action="Pull-AgentModels" }
@@ -5199,7 +5684,7 @@ function Invoke-VoiceCommand {
                     "List-OllamaModels"   { Speak-CHAMP "Listing Ollama models.";              List-OllamaModels }
                     "Show-ActivityLog"    { Speak-CHAMP "Opening activity log.";               Show-ActivityLog }
                     "Show-LiveDashboard"  { Speak-CHAMP "Launching live dashboard.";           Show-LiveDashboard }
-                    "Open-VSCodeProject"  { Speak-CHAMP "Opening VS Code.";                    Open-VSCodeProject }
+                    "VSCode-Menu"         { Speak-CHAMP "Opening VS Code integration.";        VSCode-Menu }
                     "Invoke-ClipboardAI"  { Speak-CHAMP "Sending clipboard to an agent.";      Invoke-ClipboardAI }
                     "Wolverine-HealthScan"{ Speak-CHAMP "Running Wolverine health scan.";      Wolverine-HealthScan }
                     "Pull-AgentModels"    { Speak-CHAMP "Pulling all agent models.";           Pull-AgentModels }
@@ -5678,6 +6163,7 @@ function Show-WolverineMenu {
     Write-Host "1. Wolverine Health Scan"
     Write-Host "2. Wolverine Recover Services"
     Write-Host "3. Wolverine Emergency Restart"
+    Write-Host "9. Add/Repair Hosts Entry (champ-ai-Control-center)"
     Write-Host "4. Back"
 }
 
@@ -5689,6 +6175,7 @@ function Wolverine-Menu {
             "1" { Wolverine-HealthScan }
             "2" { Wolverine-RecoverServices }
             "3" { Wolverine-EmergencyRestart }
+            "9" { Install-HostsEntry }
             "4" { return }
             default { Speak-CHAMP "Invalid Wolverine selection."; Play-ErrorSound; Pause-Menu }
         }
@@ -5716,7 +6203,7 @@ function Show-MainMenu {
     Write-Host "11. Update Open WebUI Manually"
     Write-Host "12. Open Open WebUI Dashboard"
     Write-Host "13. Show Docker Containers"
-    Write-Host "14. Open VS Code Project Folder"
+    Write-Host "14. VS Code Integration" -ForegroundColor Cyan
     Write-Host "15. Wolverine Recovery Center"
     Write-Host "16. Toggle Voice Responses"
     Write-Host "17. Toggle Sound Alerts"
@@ -5733,6 +6220,7 @@ function Show-MainMenu {
 }
 
 CHAMP-Greeting
+Ensure-HostsEntry
 Write-ActivityLog "CHAMP AI Control Center started"
 
 do {
@@ -5759,7 +6247,7 @@ do {
         "11" { Update-OpenWebUI }
         "12" { Open-WebDashboard }
         "13" { Show-DockerContainers }
-        "14" { Open-VSCodeProject }
+        "14" { VSCode-Menu }
         "15" { Wolverine-Menu }
         "16" { Toggle-Voice }
         "17" { Toggle-Sounds }
