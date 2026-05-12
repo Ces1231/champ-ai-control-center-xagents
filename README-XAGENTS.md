@@ -82,6 +82,8 @@ Or double-click `Launch-CHAMP-AI-Control-Center.bat`.
 | 4 | Show X-Agent Model Map |
 | 5 | Pull / Update Single X-Agent Model |
 | 6 | Pull All X-Agent Models |
+| 6R | **Register Agents in Open WebUI** (creates named models with system prompts) |
+| 6D | Remove Named Agent Models |
 | 7 | List Ollama Models |
 | 8 | Start Open WebUI |
 | 9 | Stop Open WebUI |

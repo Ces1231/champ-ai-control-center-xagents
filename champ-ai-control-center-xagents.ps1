@@ -291,6 +291,92 @@ function Pull-SingleAgentModel {
 }
 
 # -----------------------------
+# Register Named Agent Models in Ollama
+# Creates ollama models with agent names + system prompts
+# so they appear by name in Open WebUI
+# -----------------------------
+$AgentSystemPrompts = @{
+    "Professor-X"  = "You are Professor X, the X-Men's most powerful mind and team leader. You specialize in high-level strategic reasoning, architecture decisions, project planning, roadmaps, and careful analysis. Think deeply before acting. Be wise, measured, and thorough."
+    "Forge"        = "You are Forge, the X-Men's tech genius who can build or fix anything. You specialize in writing code, debugging, scripting in Python and PowerShell, Docker configuration, API design, and all infrastructure tasks. Output clean, working code."
+    "Cyclops"      = "You are Cyclops, the X-Men's laser-focused disciplined tactician. You specialize in cybersecurity analysis, reviewing logs, triaging threats, IOC investigation, vulnerability assessment, and any task requiring precision and methodical thinking."
+    "Nightcrawler" = "You are Nightcrawler, the fastest X-Man. You specialize in quick, concise answers. Keep responses brief, clear, and to the point. Ideal for definitions, summaries, explanations, and fast lookups."
+    "Wolverine"    = "You are Wolverine, near-indestructible with a rapid healing factor. You specialize in system recovery, resilience, service health checks, watchdog actions, emergency restarts, and diagnosing what went wrong."
+    "Magneto"      = "You are Magneto, powerful and able to bend the rules. You specialize in advanced code generation, experimental builds, low-level logic, performance optimization, and pushing the boundaries of what is technically possible."
+    "Scout"        = "You are Scout, the X-Men's vision specialist. You analyze images, screenshots, diagrams, and visual content. Describe what you see in detail and convert visual information into actionable insights or code."
+}
+
+function Register-AgentModels {
+    Show-Header
+    Speak-CHAMP "Registering all X-Agent models in Ollama with their system prompts."
+    Write-Info "This creates named Ollama models so agents appear by name in Open WebUI."
+    Write-Host ""
+
+    if (-not (Test-OllamaRunning)) {
+        Write-Err "Ollama is not running. Start Ollama first (option 2)."
+        Pause-Menu; return
+    }
+
+    $modelfileDir = $PSScriptRoot
+    $created = @(); $failed = @()
+
+    foreach ($agent in $AgentSystemPrompts.Keys | Sort-Object) {
+        $baseModel = $Agents[$agent].Model
+        $systemPrompt = $AgentSystemPrompts[$agent]
+        $modelfilePath = "$modelfileDir\Modelfile-$agent"
+
+        Write-Host "  Registering $agent ($baseModel)..." -NoNewline
+
+        # Write Modelfile
+        $modelfileContent = "FROM $baseModel`nSYSTEM `"$systemPrompt`"`nPARAMETER temperature 0.7"
+        $modelfileContent | Set-Content $modelfilePath -Encoding UTF8
+
+        # Create the named model
+        $result = ollama create $agent -f $modelfilePath 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK " OK"
+            $created += $agent
+        } else {
+            Write-Err " FAILED"
+            Write-Host "    $result" -ForegroundColor DarkGray
+            $failed += $agent
+        }
+    }
+
+    Write-Host ""
+    if ($created.Count -gt 0) {
+        Write-OK "Registered: $($created -join ', ')"
+        Write-Info "These agents now appear by name in Open WebUI at http://localhost:$OpenWebUIPort"
+    }
+    if ($failed.Count -gt 0) {
+        Write-Warn "Failed: $($failed -join ', ')"
+        Write-Warn "Ensure the base model is pulled first (option 6)."
+    }
+
+    Send-ToastNotification "CHAMP AI" "Agent models registered. Check Open WebUI for named agents."
+    Play-SuccessSound
+    Write-ActivityLog "Registered named agent models in Ollama: $($created -join ', ')"
+    Pause-Menu
+}
+
+function Remove-AgentModels {
+    Show-Header
+    Write-Warn "This removes the named CHAMP agent models from Ollama (NOT the base models)."
+    Write-Info "Base models (llama3.1:8b, etc.) are kept. Only the named wrappers are removed."
+    Write-Host ""
+    $confirm = Read-Host "Type YES to remove all named agent models"
+    if ($confirm -ne "YES") { Write-Host "Cancelled."; Pause-Menu; return }
+
+    foreach ($agent in $AgentSystemPrompts.Keys | Sort-Object) {
+        Write-Host "  Removing $agent..." -NoNewline
+        $result = ollama rm $agent 2>&1
+        if ($LASTEXITCODE -eq 0) { Write-OK " OK" } else { Write-Warn " not found (skipped)" }
+    }
+    Write-OK "Done."
+    Write-ActivityLog "Removed named agent models from Ollama"
+    Pause-Menu
+}
+
+# -----------------------------
 # Agent activation & logging
 # -----------------------------
 function Activate-Agent {
@@ -4786,6 +4872,8 @@ function Show-MainMenu {
     Write-Host "4.  Show X-Agent Model Map"
     Write-Host "5.  Pull/Update Single X-Agent Model"
     Write-Host "6.  Pull All X-Agent Models"
+    Write-Host "6R. Register Agents in Open WebUI (create named models)" -ForegroundColor Green
+    Write-Host "6D. Remove Named Agent Models"
     Write-Host "7.  List Ollama Models"
     Write-Host "8.  Start Open WebUI"
     Write-Host "9.  Stop Open WebUI"
@@ -4822,6 +4910,10 @@ do {
         "4"  { Show-AgentMap }
         "5"  { Pull-SingleAgentModel }
         "6"  { Pull-AgentModels }
+        "6R" { Register-AgentModels }
+        "6r" { Register-AgentModels }
+        "6D" { Remove-AgentModels }
+        "6d" { Remove-AgentModels }
         "7"  { List-OllamaModels }
         "8"  { Start-OpenWebUI }
         "9"  { Stop-OpenWebUI }
