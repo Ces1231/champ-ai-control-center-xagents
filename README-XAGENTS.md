@@ -50,6 +50,36 @@ Professor X's machine that amplifies his reach to the entire world. CEREBRO is t
 
 ---
 
+### Beast
+
+**Model:** `deepseek-r1:7b` | **Main Function:** Scientific Reasoning
+
+The X-Men's brilliant scientist and philosopher. Beast thinks step by step before answering, shows its reasoning chain, and arrives at well-justified conclusions. Use Beast for research tasks, multi-step logic, hypothesis testing, and any problem that benefits from visible methodical thinking.
+
+### Storm
+
+**Model:** `gemma2:9b` | **Main Function:** Creative Writing & Long-Form Content
+
+The X-Men's most powerful and versatile member, commanding presence in any situation. Use Storm for creative writing, drafting emails, reports, blog posts, documentation, and any task requiring eloquent and well-structured long-form output.
+
+### Psylocke
+
+**Model:** `qwen2.5:7b` | **Main Function:** Multilingual & Structured Output
+
+The X-Men's telepathic ninja — precise, multilingual, and lethal at structured tasks. Use Psylocke for translations, JSON/YAML generation, data extraction, parsing, and any cross-language or format-specific work.
+
+### Gambit
+
+**Model:** `mistral-nemo:12b` | **Main Function:** Long Context Conversation
+
+The X-Men's charming Cajun with a longer memory and a gift for elaborate explanations. Use Gambit for deep conversations, brainstorming sessions, complex multi-turn discussions, and topics that benefit from warmth and elaboration.
+
+### Colossus
+
+**Model:** `llama3.1:70b` | **Main Function:** Maximum Power
+
+The X-Men's strongest member. Use Colossus for the heaviest tasks — comprehensive document analysis, full code reviews, multi-step reasoning chains, and problems that smaller models struggle with. **Requires 48 GB+ RAM or a high-VRAM GPU.**
+
 ### Smart Agent Router
 
 Type any task in plain English and CEREBRO automatically picks the best agent by scoring keyword matches.
@@ -62,6 +92,11 @@ Type any task in plain English and CEREBRO automatically picks the best agent by
 | Nightcrawler | quick, fast, explain, summarize, define, tldr, brief, simple |
 | Wolverine | recover, restart, broken, crashed, health, watchdog, restore, failed |
 | Magneto | experiment, advanced, optimize, benchmark, compile, performance, prototype |
+| Beast | reason, research, analyse, hypothesis, scientific, step by step, logic, proof, deduce |
+| Storm | write, creative, story, draft, email, report, blog, essay, document, content, compose |
+| Psylocke | translate, multilingual, japanese, chinese, french, json output, yaml, format, parse, extract |
+| Gambit | conversation, chat, long, context, discuss, elaborate, brainstorm, walk me through |
+| Colossus | complex, difficult, large, massive, maximum, full analysis, comprehensive, complete |
 
 ## Run
 

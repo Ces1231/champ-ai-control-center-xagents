@@ -56,6 +56,31 @@ $Agents = @{
         Role     = "Vision agent — describe images, convert screenshots to UI code, analyse diagrams"
         Keywords = @("image","screenshot","photo","picture","vision","describe","look at","see","visual","diagram","ui from")
     }
+    "Beast" = @{
+        Model    = "deepseek-r1:7b"
+        Role     = "Scientific reasoning and research — thinks step by step before answering"
+        Keywords = @("reason","research","analyse","hypothesis","scientific","step by step","think through","logic","proof","deduce","infer","investigate","methodology")
+    }
+    "Storm" = @{
+        Model    = "gemma2:9b"
+        Role     = "Creative writing, versatile general-purpose tasks, and long-form content"
+        Keywords = @("write","creative","story","draft","email","report","blog","essay","document","content","generate","compose","narrative","describe in detail")
+    }
+    "Psylocke" = @{
+        Model    = "qwen2.5:7b"
+        Role     = "Multilingual precision, structured output, and cross-language tasks"
+        Keywords = @("translate","multilingual","japanese","chinese","french","spanish","german","language","structured","json output","yaml","format","parse","extract")
+    }
+    "Gambit" = @{
+        Model    = "mistral-nemo:12b"
+        Role     = "Longer context conversational tasks, creative problem solving, and charming explanations"
+        Keywords = @("conversation","chat","long","context","discuss","elaborate","expand","brainstorm","creative solution","explain in depth","walk me through")
+    }
+    "Colossus" = @{
+        Model    = "llama3.1:70b"
+        Role     = "Maximum capability — complex multi-step reasoning, large documents, hardest problems"
+        Keywords = @("complex","difficult","hard","large","massive","maximum","full analysis","comprehensive","detailed analysis","entire","complete","everything")
+    }
 }
 
 # -----------------------------
@@ -303,6 +328,11 @@ $AgentSystemPrompts = @{
     "Wolverine"    = "You are Wolverine, near-indestructible with a rapid healing factor. You specialize in system recovery, resilience, service health checks, watchdog actions, emergency restarts, and diagnosing what went wrong."
     "Magneto"      = "You are Magneto, powerful and able to bend the rules. You specialize in advanced code generation, experimental builds, low-level logic, performance optimization, and pushing the boundaries of what is technically possible."
     "Scout"        = "You are Scout, the X-Men's vision specialist. You analyze images, screenshots, diagrams, and visual content. Describe what you see in detail and convert visual information into actionable insights or code."
+    "Beast"        = "You are Beast (Hank McCoy), the X-Men's brilliant scientist and philosopher. You approach every problem with rigorous scientific methodology — reason step by step, show your thinking, cite evidence, and arrive at well-justified conclusions. Be thorough, academic, and precise."
+    "Storm"        = "You are Storm (Ororo Munroe), the X-Men's most versatile and commanding presence. You excel at creative writing, long-form content, drafting documents, emails, reports, and storytelling. Your responses are eloquent, well-structured, and compelling."
+    "Psylocke"     = "You are Psylocke (Betsy Braddock), the X-Men's telepathic ninja. You are precise, multilingual, and excel at structured output. Handle translations, JSON/YAML formatting, data extraction, parsing, and cross-language tasks with surgical accuracy. Always output clean structured data when asked."
+    "Gambit"       = "You are Gambit (Remy LeBeau), the X-Men's charming Cajun. You excel at long in-depth conversations, creative problem solving, and explaining complex topics in an engaging, approachable way. You have a longer memory and love to elaborate. Be thorough, warm, and clever."
+    "Colossus"     = "You are Colossus (Piotr Rasputin), the X-Men's strongest member. You handle the heaviest, most complex tasks — comprehensive analysis of large documents, multi-step reasoning chains, and problems that require full thoroughness. Be complete, detailed, and leave nothing out."
 }
 
 function Register-AgentModels {
@@ -4802,17 +4832,22 @@ function Show-AgentMenu {
     Show-Header
     Write-Info "X-Agent Launcher"
     Write-Info "----------------"
-    Write-Host "1. Activate Professor-X  - Strategic reasoning"
-    Write-Host "2. Activate Forge        - Coding and development"
-    Write-Host "3. Activate Cyclops      - Cybersecurity analysis"
-    Write-Host "4. Activate Nightcrawler - Fast lightweight assistant"
-    Write-Host "5. Activate Wolverine    - Recovery/resilience assistant"
-    Write-Host "6. Activate Magneto      - Experimental engineering"
-    Write-Host "7. Activate Scout        - Vision agent (image → UI / describe)"
-    Write-Host "8. Run Custom Model"
-    Write-Host "9. Quick Query (one-shot prompt)"
-    Write-Host "10. Smart Agent Router"
-    Write-Host "11. Back"
+    Write-Host "1.  Activate Professor-X  - Strategic reasoning & planning"
+    Write-Host "2.  Activate Forge        - Coding and development"
+    Write-Host "3.  Activate Cyclops      - Cybersecurity analysis"
+    Write-Host "4.  Activate Nightcrawler - Fast lightweight assistant"
+    Write-Host "5.  Activate Wolverine    - Recovery/resilience assistant"
+    Write-Host "6.  Activate Magneto      - Experimental engineering"
+    Write-Host "7.  Activate Scout        - Vision agent (image → UI / describe)"
+    Write-Host "8.  Activate Beast        - Scientific step-by-step reasoning" -ForegroundColor DarkCyan
+    Write-Host "9.  Activate Storm        - Creative writing & long-form content" -ForegroundColor DarkCyan
+    Write-Host "10. Activate Psylocke     - Multilingual & structured output" -ForegroundColor DarkCyan
+    Write-Host "11. Activate Gambit       - Long context conversational tasks" -ForegroundColor DarkCyan
+    Write-Host "12. Activate Colossus     - Maximum power (70B — needs 48GB RAM/GPU)" -ForegroundColor DarkRed
+    Write-Host "13. Run Custom Model"
+    Write-Host "14. Quick Query (one-shot prompt)"
+    Write-Host "15. Smart Agent Router"
+    Write-Host "16. Back"
 }
 
 function Agent-Menu {
@@ -4827,13 +4862,18 @@ function Agent-Menu {
             "5"  { Activate-Agent "Wolverine" }
             "6"  { Activate-Agent "Magneto" }
             "7"  { Activate-Scout }
-            "8"  { Run-CustomModel }
-            "9"  { Quick-QueryAgent }
-            "10" { Smart-RouteAgent }
-            "11" { return }
+            "8"  { Activate-Agent "Beast" }
+            "9"  { Activate-Agent "Storm" }
+            "10" { Activate-Agent "Psylocke" }
+            "11" { Activate-Agent "Gambit" }
+            "12" { Activate-Agent "Colossus" }
+            "13" { Run-CustomModel }
+            "14" { Quick-QueryAgent }
+            "15" { Smart-RouteAgent }
+            "16" { return }
             default { Speak-CHAMP "Invalid agent selection."; Play-ErrorSound; Pause-Menu }
         }
-    } while ($choice -ne "11")
+    } while ($choice -ne "16")
 }
 
 function Show-WolverineMenu {
