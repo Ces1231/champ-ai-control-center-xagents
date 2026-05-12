@@ -284,7 +284,20 @@ function Show-Header {
     Write-Host ""
 }
 
-function CHAMP-Greeting { Play-StartSound; Speak-CHAMP "CEREBRO online. Good day, Champ. Local AI systems standing by." }
+function CHAMP-Greeting {
+    Play-StartSound
+    $hour = (Get-Date).Hour
+    $name = $env:USERNAME
+    $timeGreeting = switch ($true) {
+        ($hour -ge  5 -and $hour -lt 12) { "Good morning" }
+        ($hour -ge 12 -and $hour -lt 17) { "Good afternoon" }
+        ($hour -ge 17 -and $hour -lt 21) { "Good evening" }
+        default                           { "Welcome back" }
+    }
+    $dayOfWeek = (Get-Date).DayOfWeek
+    $dateStr   = (Get-Date -Format "MMMM d")
+    Speak-CHAMP "$timeGreeting, $name. CEREBRO is online. Today is $dayOfWeek, $dateStr. Your X-Agent team is standing by."
+}
 
 # -----------------------------
 # CEREBRO System Status
