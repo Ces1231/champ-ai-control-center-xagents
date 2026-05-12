@@ -5005,6 +5005,107 @@ function Invoke-SpeechRecognition {
     }
 }
 
+# -----------------------------
+# Wake Word Listener
+# Listens for "Hey CEREBRO" or "CEREBRO" in the background
+# Uses a grammar-constrained recognizer (not dictation) for reliability
+# -----------------------------
+$Global:WakeWordActive   = $false
+$Global:WakeWordJob      = $null
+$Global:WakeWordTrigger  = "$PSScriptRoot\.wake-trigger"
+
+function Start-WakeWordListener {
+    if (-not $Global:SpeechRecognitionAvailable) {
+        Write-Warn "Speech recognition not available — wake word cannot start."
+        Pause-Menu; return
+    }
+    if ($Global:WakeWordActive) {
+        Write-Warn "Wake word listener is already running."
+        Pause-Menu; return
+    }
+
+    # Remove any stale trigger file
+    if (Test-Path $Global:WakeWordTrigger) { Remove-Item $Global:WakeWordTrigger -Force }
+
+    # Spawn a background job that listens for the wake phrase
+    # The job writes a trigger file when it hears the wake word
+    $triggerPath = $Global:WakeWordTrigger
+    $Global:WakeWordJob = Start-Job -ScriptBlock {
+        param($triggerPath)
+        Add-Type -AssemblyName System.Speech
+        $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+        $recognizer.SetInputToDefaultAudioDevice()
+
+        # Constrained grammar — only listen for these exact phrases
+        $choices = New-Object System.Speech.Recognition.Choices
+        $choices.Add("hey cerebro")
+        $choices.Add("cerebro")
+        $choices.Add("hey CEREBRO")
+        $choices.Add("CEREBRO wake up")
+        $choices.Add("cerebro wake up")
+        $gb = New-Object System.Speech.Recognition.GrammarBuilder $choices
+        $grammar = New-Object System.Speech.Recognition.Grammar $gb
+        $recognizer.LoadGrammar($grammar)
+
+        # Listen in a loop until the trigger file signals stop
+        while (-not (Test-Path "$triggerPath.stop")) {
+            try {
+                $result = $recognizer.Recognize([TimeSpan]::FromSeconds(3))
+                if ($result -and $result.Text) {
+                    # Write trigger file so main thread knows to activate
+                    Set-Content -Path $triggerPath -Value $result.Text -Encoding UTF8
+                }
+            } catch {}
+        }
+        $recognizer.Dispose()
+    } -ArgumentList $triggerPath
+
+    $Global:WakeWordActive = $true
+    Write-OK "Wake word listener started. Say 'Hey CEREBRO' at any time."
+    Write-Info "CEREBRO will activate voice conversation mode when it hears you."
+    Speak-CHAMP "Wake word listener is active, Carnell. Say Hey CEREBRO whenever you need me."
+    Write-ActivityLog "Wake word listener started"
+    Pause-Menu
+}
+
+function Stop-WakeWordListener {
+    if (-not $Global:WakeWordActive) {
+        Write-Warn "Wake word listener is not running."
+        Pause-Menu; return
+    }
+    # Signal the background job to stop
+    Set-Content -Path "$($Global:WakeWordTrigger).stop" -Value "stop" -Encoding UTF8
+    if ($Global:WakeWordJob) {
+        Stop-Job $Global:WakeWordJob -ErrorAction SilentlyContinue
+        Remove-Job $Global:WakeWordJob -ErrorAction SilentlyContinue
+        $Global:WakeWordJob = $null
+    }
+    $Global:WakeWordActive = $false
+    # Clean up trigger files
+    Remove-Item $Global:WakeWordTrigger       -Force -ErrorAction SilentlyContinue
+    Remove-Item "$($Global:WakeWordTrigger).stop" -Force -ErrorAction SilentlyContinue
+    Write-OK "Wake word listener stopped."
+    Speak-CHAMP "Wake word listener deactivated."
+    Write-ActivityLog "Wake word listener stopped"
+    Pause-Menu
+}
+
+function Test-WakeWordTriggered {
+    # Called each time the main menu loop runs — checks for trigger file
+    if (-not $Global:WakeWordActive) { return }
+    if (Test-Path $Global:WakeWordTrigger) {
+        $phrase = Get-Content $Global:WakeWordTrigger -Raw -ErrorAction SilentlyContinue
+        Remove-Item $Global:WakeWordTrigger -Force -ErrorAction SilentlyContinue
+        if ($phrase) {
+            [console]::beep(900,100); [console]::beep(1100,150)
+            Write-Host ""
+            Write-Host "  [Wake word detected: '$($phrase.Trim())']" -ForegroundColor Green
+            Speak-CHAMP "Yes, Carnell. I am listening."
+            CEREBRO-ChatMode -AgentName "Professor-X" -VoiceInput $true
+        }
+    }
+}
+
 function CEREBRO-ChatMode {
     param(
         [string]$AgentName   = "Professor-X",
@@ -5157,7 +5258,12 @@ function Chat-Menu {
             Write-Host "6. Voice input not available (System.Speech not found)" -ForegroundColor DarkGray
         }
         Write-Host ""
-        Write-Host "8. Back"
+        if ($Global:WakeWordActive) {
+            Write-Host "8. Stop wake word listener  [ACTIVE]" -ForegroundColor Green
+        } else {
+            Write-Host "8. Start wake word listener (say 'Hey CEREBRO' anytime)" -ForegroundColor DarkGreen
+        }
+        Write-Host "9. Back"
         Write-Host ""
         Write-Host "  In conversation: type 'exit' to leave, 'switch' to change agent," -ForegroundColor DarkGray
         Write-Host "  'voice on/off' to toggle mic, 'clear' to reset memory." -ForegroundColor DarkGray
@@ -5193,10 +5299,13 @@ function Chat-Menu {
                     }
                 } else { Write-Warn "Voice input not available."; Pause-Menu }
             }
-            "8" { return }
+            "8" {
+                if ($Global:WakeWordActive) { Stop-WakeWordListener } else { Start-WakeWordListener }
+            }
+            "9" { return }
             default { Play-ErrorSound; Pause-Menu }
         }
-    } while ($c -ne "8")
+    } while ($c -ne "9")
 }
 
 # -----------------------------
@@ -5456,12 +5565,14 @@ function Show-MainMenu {
     Write-Host ""
     if ($EnableVoice)  { Write-OK   "Voice  : ON"  } else { Write-Warn "Voice  : OFF" }
     if ($EnableSounds) { Write-OK   "Sounds : ON"  } else { Write-Warn "Sounds : OFF" }
+    if ($Global:WakeWordActive) { Write-OK "Wake Word : ACTIVE — say 'Hey CEREBRO'" } else { Write-Warn "Wake Word : OFF" }
 }
 
 CHAMP-Greeting
 Write-ActivityLog "CHAMP AI Control Center started"
 
 do {
+    Test-WakeWordTriggered
     Show-MainMenu
     $choice = Read-Host "Select an option"
     switch ($choice) {
