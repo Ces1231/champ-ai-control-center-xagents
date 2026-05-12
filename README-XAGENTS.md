@@ -50,6 +50,23 @@ Professor X's machine that amplifies his reach to the entire world. CEREBRO is t
 
 ---
 
+---
+
+## Full Agent Roster
+
+### RAM Requirements at a Glance
+
+| Tier | RAM Needed | Agents |
+| --- | --- | --- |
+| Lightning Fast | 8 GB | Dazzler, Jubilee, Nightcrawler |
+| Core Team | 16 GB+ | Professor-X, Forge, Cyclops, Wolverine, Magneto, Beast, Storm, Psylocke, Havok, Bishop, Sage, Cypher, Moira, Cannonball |
+| Enhanced | 24–32 GB | Gambit, Cable, Sunfire, Banshee, Mr. Sinister, Iceman, Shadowcat |
+| Vision | 8–16 GB | Scout, Rogue, Longshot |
+| Heavy Hitters | 48 GB+ | Legion, Emma Frost, Colossus, Phoenix, Stryfe |
+| Titans | 96 GB+ | Onslaught, Apocalypse |
+
+---
+
 ### Beast
 
 **Model:** `deepseek-r1:7b` | **Main Function:** Scientific Reasoning
@@ -80,6 +97,138 @@ The X-Men's charming Cajun with a longer memory and a gift for elaborate explana
 
 The X-Men's strongest member. Use Colossus for the heaviest tasks — comprehensive document analysis, full code reviews, multi-step reasoning chains, and problems that smaller models struggle with. **Requires 48 GB+ RAM or a high-VRAM GPU.**
 
+### Jubilee
+
+**Model:** `llama3.2:3b` | **Main Function:** Ultra-Fast Lightweight
+
+The youngest X-Man — snappy, energetic, and instant. Use Jubilee when even Nightcrawler feels slow. Ideal for one-liners, simple definitions, and minimal-RAM environments.
+
+### Emma Frost
+
+**Model:** `command-r:35b` | **Main Function:** Long Document Analysis
+
+The White Queen with a 128K context window. Use Emma Frost to read entire files, full codebases, or massive documents in a single pass. No other agent can hold this much context at once.
+
+### Iceman
+
+**Model:** `starcoder2:15b` | **Main Function:** Pure Code (80+ Languages)
+
+Cool, precise, and trained exclusively on code. Use Iceman for languages Forge hasn't seen — Rust, Go, Swift, Kotlin, Haskell, and 75 more. No general knowledge, just code.
+
+### Rogue
+
+**Model:** `llava:13b` | **Main Function:** Enhanced Vision
+
+Absorbs more detail than Scout. Use Rogue for complex screenshots, intricate diagrams, and images where the 7B vision model misses fine details.
+
+### Shadowcat
+
+**Model:** `codestral:22b` | **Main Function:** Deep Code Analysis
+
+Mistral's dedicated code model phases through any codebase. Stronger than Forge or Iceman on real-world multi-file code reviews and full-file analysis.
+
+### Cable
+
+**Model:** `nous-hermes2:10.7b` | **Main Function:** Instruction Following
+
+Battle-hardened and precise. Use Cable when you have a multi-step procedure that must be followed exactly — no drifting, no improvising.
+
+### Dazzler
+
+**Model:** `llama3.2:1b` | **Main Function:** Absolute Fastest
+
+The smallest agent at 1B parameters (~1 GB). Instant responses for trivial lookups. Use on low-RAM machines or when speed is everything.
+
+### Havok
+
+**Model:** `openchat:7b` | **Main Function:** Natural Conversation
+
+Fine-tuned for human-friendly dialogue. Use Havok when you want a warm, approachable response rather than a clinical answer.
+
+### Sunfire
+
+**Model:** `gemma3:12b` | **Main Function:** Google Gemma 3
+
+Google's latest generation model. Strong across languages including Japanese, versatile reasoning, and up-to-date training.
+
+### Bishop
+
+**Model:** `solar:10.7b` | **Main Function:** Balanced All-Rounder
+
+Upstage's reliable general model. Use Bishop for everyday tasks that don't need a specialist — steady, competent, no surprises.
+
+### Sage
+
+**Model:** `mathstral:7b` | **Main Function:** Mathematics
+
+The living computer. Use Sage for equations, calculus, statistics, proofs, and any STEM problem requiring exact numerical work.
+
+### Cypher
+
+**Model:** `sqlcoder:7b` | **Main Function:** SQL & Data
+
+Trained to understand the language of databases. Use Cypher for writing queries, designing schemas, and analysing data.
+
+### Banshee
+
+**Model:** `phi4:14b` | **Main Function:** Microsoft Phi-4 Precision
+
+Microsoft's Phi-4 in a compact 14B package. High-precision reasoning that punches above its weight class.
+
+### Mr. Sinister
+
+**Model:** `deepseek-r1:14b` | **Main Function:** Deep Analytical Reasoning
+
+Larger DeepSeek R1 reasoning model. Use Mr. Sinister when Beast's 7B reasoning isn't deep enough for the problem.
+
+### Legion
+
+**Model:** `mixtral:8x7b` | **Main Function:** Mixture of Experts
+
+Eight specialized sub-models working together. Stronger than a single 7B on most tasks, especially diverse topics in a single prompt.
+
+### Cannonball
+
+**Model:** `granite3.1-dense:8b` | **Main Function:** IBM Enterprise
+
+IBM's Granite model — built for business, technical writing, and enterprise tasks. Unstoppable on professional real-world problems.
+
+### Moira
+
+**Model:** `meditron:7b` | **Main Function:** Medical & Health AI
+
+The X-Men's chief scientist and physician. Use Moira for medical questions, biology, clinical topics, and health information. *(Always consult a real doctor for serious decisions.)*
+
+### Longshot
+
+**Model:** `llama3.2-vision:11b` | **Main Function:** Multimodal Vision
+
+Combines image understanding with text reasoning in a single 11B multimodal Llama model. Better integration of visual and textual context than llava-based agents.
+
+### Phoenix
+
+**Model:** `llama3.3:70b` | **Main Function:** Latest 70B Powerhouse
+
+The most powerful general model — Llama 3.3 at 70B. Rebirth of the strongest force. Use Phoenix when Colossus needs an update.
+
+### Stryfe
+
+**Model:** `deepseek-r1:70b` | **Main Function:** Massive Reasoning
+
+DeepSeek R1 at 70B scale. Use Stryfe for the hardest analytical problems — extreme reasoning depth at maximum parameter count.
+
+### Apocalypse
+
+**Model:** `command-r-plus:104b` | **Main Function:** Ultimate Context (104B)
+
+Ancient and immeasurable power. 104B parameters with the longest context window available. Reads entire repos, massive documents, and delivers the most comprehensive analysis possible. **Requires 96 GB+ RAM.**
+
+### Onslaught
+
+**Model:** `mixtral:8x22b` | **Main Function:** Largest Mixture of Experts
+
+The merged unstoppable force — 8 experts of 22B each. The most powerful MoE model available. Use Onslaught when Legion isn't enough. **Requires 96 GB+ RAM.**
+
 ### Smart Agent Router
 
 Type any task in plain English and CEREBRO automatically picks the best agent by scoring keyword matches.
@@ -97,6 +246,28 @@ Type any task in plain English and CEREBRO automatically picks the best agent by
 | Psylocke | translate, multilingual, japanese, chinese, french, json output, yaml, format, parse, extract |
 | Gambit | conversation, chat, long, context, discuss, elaborate, brainstorm, walk me through |
 | Colossus | complex, difficult, large, massive, maximum, full analysis, comprehensive, complete |
+| Jubilee | instant, tiny, smallest, 3b, lightweight, snap, flash |
+| Emma Frost | long document, entire file, 128k, full codebase, rag, retrieval |
+| Iceman | rust, go, swift, kotlin, haskell, scala, typescript, ruby, php, c++, c# |
+| Rogue | detailed image, high detail, complex screenshot, 13b vision |
+| Shadowcat | codestral, deep code, entire repo, codebase review, full file |
+| Cable | instruction, follow steps, multi-step, precise, procedure, protocol |
+| Dazzler | 1b, absolute fastest, minimum, lightest, one line |
+| Havok | friendly, natural, casual, dialogue, approachable |
+| Sunfire | gemma3, google latest, japanese, multilingual |
+| Bishop | balanced, reliable, general, everyday, solar |
+| Sage | math, calculate, equation, calculus, statistics, proof, formula |
+| Cypher | sql, database, query, select, join, schema, postgres |
+| Banshee | phi4, microsoft latest, compact, precise, 14b |
+| Mr. Sinister | deep reasoning, 14b reason, hard problem, obsessive |
+| Legion | mixtral, mixture, multiple experts, moe, 8x7 |
+| Cannonball | granite, ibm, enterprise, business, corporate |
+| Moira | medical, health, disease, symptom, diagnosis, clinical |
+| Longshot | llama vision, multimodal, image and text, 11b vision |
+| Phoenix | llama3.3, latest llama, newest 70b |
+| Stryfe | deepseek 70b, massive reasoning, r1 70b |
+| Apocalypse | 104b, command-r-plus, cohere, ultimate, largest |
+| Onslaught | 8x22b, largest mixtral, massive moe, unstoppable |
 
 ## Run
 

@@ -81,6 +81,118 @@ $Agents = @{
         Role     = "Maximum capability — complex multi-step reasoning, large documents, hardest problems"
         Keywords = @("complex","difficult","hard","large","massive","maximum","full analysis","comprehensive","detailed analysis","entire","complete","everything")
     }
+    # --- New agents from previous batch ---
+    "Jubilee" = @{
+        Model    = "llama3.2:3b"
+        Role     = "Ultra-fast 3B assistant for instant answers with minimal resource use"
+        Keywords = @("instant","tiny","smallest","3b","lightweight","quick answer","no wait","snap","flash")
+    }
+    "Emma-Frost" = @{
+        Model    = "command-r:35b"
+        Role     = "Long document analysis with 128K context — reads entire files and codebases at once"
+        Keywords = @("long document","entire file","128k","full codebase","read all","whole file","entire codebase","rag","retrieval")
+    }
+    "Iceman" = @{
+        Model    = "starcoder2:15b"
+        Role     = "Pure code specialist trained exclusively on code across 80+ programming languages"
+        Keywords = @("starcoder","80 languages","kotlin","rust","go","swift","typescript","ruby","php","c++","c#","java","haskell","scala")
+    }
+    "Rogue" = @{
+        Model    = "llava:13b"
+        Role     = "Enhanced vision agent — absorbs more visual detail than Scout for complex images"
+        Keywords = @("detailed image","high detail","complex screenshot","large diagram","detailed vision","enhance","absorb","13b vision")
+    }
+    "Shadowcat" = @{
+        Model    = "codestral:22b"
+        Role     = "Mistral's dedicated code model — phases through any codebase with surgical precision"
+        Keywords = @("codestral","mistral code","phase","infiltrate","large code","entire repo","codebase review","code audit","full file")
+    }
+    "Cable" = @{
+        Model    = "nous-hermes2:10.7b"
+        Role     = "Battle-hardened instruction follower — executes complex multi-step instructions precisely"
+        Keywords = @("instruction","follow steps","multi-step","precise","exact","step 1","step 2","checklist","procedure","protocol","execute plan")
+    }
+    # --- Additional new agents ---
+    "Dazzler" = @{
+        Model    = "llama3.2:1b"
+        Role     = "Smallest fastest agent — 1B model for trivial lookups and ultra-low RAM environments"
+        Keywords = @("1b","absolute fastest","minimum","lightest","dazzle","flash answer","one word","one line")
+    }
+    "Havok" = @{
+        Model    = "openchat:7b"
+        Role     = "Fine-tuned conversational Llama — natural dialogue and human-friendly responses"
+        Keywords = @("friendly","natural","talk","dialogue","casual","human","chat casually","openchat","approachable")
+    }
+    "Sunfire" = @{
+        Model    = "gemma3:12b"
+        Role     = "Google Gemma 3 — latest generation versatile model with strong multilingual and reasoning"
+        Keywords = @("gemma3","gemma 3","google latest","solar","fire","plasma","japanese","asian","latest google")
+    }
+    "Bishop" = @{
+        Model    = "solar:10.7b"
+        Role     = "Energy-absorbing all-rounder — strong general model from Upstage, reliable and balanced"
+        Keywords = @("solar","balanced","general","reliable","all-purpose","upstage","everyday","standard","normal task")
+    }
+    "Sage" = @{
+        Model    = "mathstral:7b"
+        Role     = "Living computer — mathematics specialist for calculations, proofs, and STEM problems"
+        Keywords = @("math","calculate","equation","algebra","calculus","statistics","proof","formula","derivative","integral","matrix","probability","stem","numbers")
+    }
+    "Cypher" = @{
+        Model    = "sqlcoder:7b"
+        Role     = "Understands all data languages — SQL specialist for database queries and data analysis"
+        Keywords = @("sql","database","query","select","join","table","schema","postgres","mysql","sqlite","db","data query","aggregate","group by","where clause")
+    }
+    "Banshee" = @{
+        Model    = "phi4:14b"
+        Role     = "Microsoft Phi-4 — high-precision reasoning in a compact 14B package"
+        Keywords = @("phi4","phi 4","microsoft latest","sonic","precise","resonance","compact powerful","14b precise")
+    }
+    "Mr-Sinister" = @{
+        Model    = "deepseek-r1:14b"
+        Role     = "Larger DeepSeek reasoning model — obsessive analytical depth for hard scientific problems"
+        Keywords = @("deep reasoning","14b reason","hard problem","complex logic","sinister","analytical","obsessive","deep analysis","intricate")
+    }
+    "Legion" = @{
+        Model    = "mixtral:8x7b"
+        Role     = "Mixture of experts — 8 specialized sub-models, stronger than a single 7B on most tasks"
+        Keywords = @("mixtral","mixture","multiple experts","moe","8x7","strong general","multi-expert","best of eight")
+    }
+    "Cannonball" = @{
+        Model    = "granite3.1-dense:8b"
+        Role     = "IBM Granite — enterprise-grade model, unstoppable on business and technical tasks"
+        Keywords = @("granite","ibm","enterprise","business","corporate","technical report","ibm model","granite3")
+    }
+    "Moira" = @{
+        Model    = "meditron:7b"
+        Role     = "X-Men's chief scientist and physician — medical AI for health, biology, and clinical topics"
+        Keywords = @("medical","health","disease","symptom","diagnosis","drug","clinical","biology","anatomy","treatment","patient","medicine","healthcare")
+    }
+    "Longshot" = @{
+        Model    = "llama3.2-vision:11b"
+        Role     = "Multimodal Llama vision — luck-powered image and text combined reasoning"
+        Keywords = @("llama vision","multimodal","image and text","combined","11b vision","photo analysis","visual reasoning","llama3.2 vision")
+    }
+    "Phoenix" = @{
+        Model    = "llama3.3:70b"
+        Role     = "Latest Llama 70B — the most powerful general model, rebirth of the strongest force"
+        Keywords = @("llama3.3","latest llama","phoenix","rebirth","newest 70b","llama 3.3","most capable","top model")
+    }
+    "Stryfe" = @{
+        Model    = "deepseek-r1:70b"
+        Role     = "DeepSeek R1 70B — massive reasoning clone, extreme analytical power"
+        Keywords = @("deepseek 70b","massive reasoning","r1 70b","extreme analysis","stryfe","clone reasoning","deepseek large")
+    }
+    "Apocalypse" = @{
+        Model    = "command-r-plus:104b"
+        Role     = "104B ancient power — Cohere's largest model, longest context, ultimate retrieval"
+        Keywords = @("104b","command-r-plus","cohere","ultimate","apocalypse","ancient","largest","max context","unlimited")
+    }
+    "Onslaught" = @{
+        Model    = "mixtral:8x22b"
+        Role     = "Mixture of 8x22B experts — the most powerful MoE model, merged unstoppable force"
+        Keywords = @("8x22b","largest mixtral","onslaught","merged","unstoppable","massive moe","mixture 22b","largest mixture")
+    }
 }
 
 # -----------------------------
@@ -333,6 +445,28 @@ $AgentSystemPrompts = @{
     "Psylocke"     = "You are Psylocke (Betsy Braddock), the X-Men's telepathic ninja. You are precise, multilingual, and excel at structured output. Handle translations, JSON/YAML formatting, data extraction, parsing, and cross-language tasks with surgical accuracy. Always output clean structured data when asked."
     "Gambit"       = "You are Gambit (Remy LeBeau), the X-Men's charming Cajun. You excel at long in-depth conversations, creative problem solving, and explaining complex topics in an engaging, approachable way. You have a longer memory and love to elaborate. Be thorough, warm, and clever."
     "Colossus"     = "You are Colossus (Piotr Rasputin), the X-Men's strongest member. You handle the heaviest, most complex tasks — comprehensive analysis of large documents, multi-step reasoning chains, and problems that require full thoroughness. Be complete, detailed, and leave nothing out."
+    "Jubilee"      = "You are Jubilee (Jubilation Lee), the youngest and most energetic X-Man. You give fast, snappy, direct answers. No fluff, no padding. Get to the point immediately. You are optimistic, quick, and efficient."
+    "Emma-Frost"   = "You are Emma Frost, the White Queen. Elegant, penetrating, and devastatingly thorough. You excel at reading entire documents, codebases, and long contexts in full. You analyze everything completely before responding. Be sophisticated, precise, and comprehensive."
+    "Iceman"       = "You are Iceman (Bobby Drake), the X-Men's cool and precise specialist. You are trained exclusively on code across 80+ programming languages. You write clean, correct, optimized code. You are cool under pressure and never make careless mistakes."
+    "Rogue"        = "You are Rogue, who absorbs the powers and memories of others. As an enhanced vision agent, you see more detail, absorb more visual information, and provide richer analysis of images, screenshots, and diagrams than any other agent."
+    "Shadowcat"    = "You are Shadowcat (Kitty Pryde), who phases through solid matter. You phase through any codebase with surgical precision. You specialize in deep code analysis, security review of entire files, and understanding complex multi-file code architectures."
+    "Cable"        = "You are Cable (Nathan Summers), the battle-hardened time-traveling soldier. You excel at following complex multi-step instructions with absolute precision. You execute plans exactly as specified, never drifting from the instructions given."
+    "Dazzler"      = "You are Dazzler (Alison Blaire), who converts sound to dazzling light. You give the fastest, most direct answers possible. One sentence when one sentence will do. You are the smallest, lightest, quickest responder on the team."
+    "Havok"        = "You are Havok (Alex Summers), Cyclops's brother with plasma energy powers. You are warm, conversational, and natural in dialogue. You make complex topics feel approachable and engage with humans in a friendly, open way."
+    "Sunfire"      = "You are Sunfire (Shiro Yoshida), who commands solar plasma. You are Google's latest Gemma 3 model — powerful, versatile, and brilliant across multiple languages including Japanese. You bring the energy of the sun to every task."
+    "Bishop"       = "You are Bishop (Lucas Bishop), who absorbs energy and redirects it. You are a reliable, balanced, all-purpose assistant. You handle everyday tasks with steady competence. Not flashy, not extreme — just consistently excellent."
+    "Sage"         = "You are Sage (Tessa), the X-Men's living computer. You specialize in mathematics, statistics, proofs, equations, and STEM problems. Show all working. Be precise with numbers. Never approximate when an exact answer is possible."
+    "Cypher"       = "You are Cypher (Doug Ramsey), the mutant who understands all languages including the language of machines and data. You specialize in SQL queries, database schema design, data analysis, and all things data. Write clean, optimized SQL."
+    "Banshee"      = "You are Banshee (Sean Cassidy), whose sonic scream resonates with precision. You are Microsoft's Phi-4 — compact but extraordinarily precise. You reason carefully and deliver accurate, well-structured answers in a compact form."
+    "Mr-Sinister"  = "You are Mister Sinister (Nathaniel Essex), the X-Men's most obsessive analytical villain turned analyst. You apply deep scientific methodology, break down problems with clinical precision, and never stop until you reach the root of every issue."
+    "Legion"       = "You are Legion (David Haller), Professor X's son with multiple personalities — each a specialist. As a mixture-of-experts model, different parts of you activate for different problems. You are stronger than any single model your size."
+    "Cannonball"   = "You are Cannonball (Sam Guthrie), unstoppable when blasting. You are IBM's enterprise-grade Granite model — built for business, technical, and professional tasks. Reliable, structured, and unstoppable on real-world problems."
+    "Moira"        = "You are Moira MacTaggert, the X-Men's chief scientist and physician. You specialize in medical topics, health questions, biology, clinical information, and scientific research. Always note that you are an AI and serious medical decisions require a real doctor."
+    "Longshot"     = "You are Longshot, the luck-powered hero from the Mojoverse. As a multimodal Llama vision model, you combine image understanding with text reasoning. You analyze photos, screenshots, and diagrams while also answering questions about them."
+    "Phoenix"      = "You are Phoenix (Jean Grey), the most powerful X-Man, host of the Phoenix Force. You are the latest and most capable Llama 70B model. Unlimited potential, complete knowledge, unstoppable reasoning. Handle any task with grace and total power."
+    "Stryfe"       = "You are Stryfe, Cable's powerful clone from the future. You are DeepSeek R1 at 70B scale — extreme reasoning power, obsessive analytical depth, and the ability to think through the most complex problems step by step at massive scale."
+    "Apocalypse"   = "You are Apocalypse (En Sabah Nur), the ancient and most powerful mutant. At 104B parameters with the longest context window, you are truly unlimited. You read entire codebases, analyze massive documents, and deliver the most comprehensive responses possible."
+    "Onslaught"    = "You are Onslaught, the merged entity of Professor X and Magneto — unstoppable and all-encompassing. As a mixture of 8x22B experts, you are the most powerful MoE model available. You handle any task with overwhelming force and total capability."
 }
 
 function Register-AgentModels {
@@ -4828,52 +4962,200 @@ function IntelHub-Menu {
 # -----------------------------
 # Sub-menus
 # -----------------------------
+function Agent-Category-Lightning {
+    do {
+        Show-Header
+        Write-Host "=== LIGHTNING FAST — Tiny Models (runs on any hardware) ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. Dazzler      - llama3.2:1b  (~1GB)   - Absolute fastest, trivial lookups"
+        Write-Host "2. Jubilee      - llama3.2:3b  (~2GB)   - Ultra-fast, young and snappy"
+        Write-Host "3. Nightcrawler - phi3:mini    (~2.2GB) - Fast lightweight assistant"
+        Write-Host "4. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Activate-Agent "Dazzler" }
+            "2" { Activate-Agent "Jubilee" }
+            "3" { Activate-Agent "Nightcrawler" }
+            "4" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "4")
+}
+
+function Agent-Category-Core {
+    do {
+        Show-Header
+        Write-Host "=== CORE TEAM — 7-9B Workhorses (runs on 16GB+ RAM) ===" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "1.  Professor-X - llama3.1:8b      - Strategy & planning"
+        Write-Host "2.  Forge       - qwen2.5-coder:7b - Coding & infrastructure"
+        Write-Host "3.  Cyclops     - mistral:7b        - Cybersecurity & analysis"
+        Write-Host "4.  Wolverine   - phi3:mini         - Recovery & resilience"
+        Write-Host "5.  Magneto     - codellama:7b      - Experimental engineering"
+        Write-Host "6.  Beast       - deepseek-r1:7b   - Scientific reasoning"
+        Write-Host "7.  Storm       - gemma2:9b         - Creative writing"
+        Write-Host "8.  Psylocke    - qwen2.5:7b        - Multilingual & structured"
+        Write-Host "9.  Havok       - openchat:7b       - Natural conversation"
+        Write-Host "10. Bishop      - solar:10.7b       - Balanced all-rounder"
+        Write-Host "11. Sage        - mathstral:7b      - Mathematics specialist"
+        Write-Host "12. Cypher      - sqlcoder:7b       - SQL & data specialist"
+        Write-Host "13. Moira       - meditron:7b       - Medical & health AI"
+        Write-Host "14. Cannonball  - granite3.1-dense:8b - IBM enterprise"
+        Write-Host "15. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1"  { Activate-Agent "Professor-X" }
+            "2"  { Activate-Agent "Forge" }
+            "3"  { Activate-Agent "Cyclops" }
+            "4"  { Activate-Agent "Wolverine" }
+            "5"  { Activate-Agent "Magneto" }
+            "6"  { Activate-Agent "Beast" }
+            "7"  { Activate-Agent "Storm" }
+            "8"  { Activate-Agent "Psylocke" }
+            "9"  { Activate-Agent "Havok" }
+            "10" { Activate-Agent "Bishop" }
+            "11" { Activate-Agent "Sage" }
+            "12" { Activate-Agent "Cypher" }
+            "13" { Activate-Agent "Moira" }
+            "14" { Activate-Agent "Cannonball" }
+            "15" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "15")
+}
+
+function Agent-Category-Enhanced {
+    do {
+        Show-Header
+        Write-Host "=== ENHANCED — 10-22B Models (runs on 24-32GB RAM) ===" -ForegroundColor DarkCyan
+        Write-Host ""
+        Write-Host "1. Gambit      - mistral-nemo:12b   (~7GB)  - Long context conversation"
+        Write-Host "2. Cable       - nous-hermes2:10.7b (~6GB)  - Precise instruction following"
+        Write-Host "3. Sunfire     - gemma3:12b         (~8GB)  - Google Gemma 3 latest"
+        Write-Host "4. Banshee     - phi4:14b           (~9GB)  - Microsoft Phi-4 precision"
+        Write-Host "5. Mr-Sinister - deepseek-r1:14b    (~9GB)  - Deep analytical reasoning"
+        Write-Host "6. Iceman      - starcoder2:15b     (~9GB)  - Pure code 80+ languages"
+        Write-Host "7. Shadowcat   - codestral:22b      (~13GB) - Mistral code specialist"
+        Write-Host "8. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Activate-Agent "Gambit" }
+            "2" { Activate-Agent "Cable" }
+            "3" { Activate-Agent "Sunfire" }
+            "4" { Activate-Agent "Banshee" }
+            "5" { Activate-Agent "Mr-Sinister" }
+            "6" { Activate-Agent "Iceman" }
+            "7" { Activate-Agent "Shadowcat" }
+            "8" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "8")
+}
+
+function Agent-Category-Vision {
+    do {
+        Show-Header
+        Write-Host "=== VISION AGENTS — Multimodal Models ===" -ForegroundColor Magenta
+        Write-Host ""
+        Write-Host "1. Scout    - llava:7b               (~4.7GB) - Standard vision agent"
+        Write-Host "2. Rogue    - llava:13b              (~8GB)   - Enhanced vision detail"
+        Write-Host "3. Longshot - llama3.2-vision:11b   (~8GB)   - Multimodal Llama"
+        Write-Host "4. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Activate-Scout }
+            "2" { Activate-Agent "Rogue" }
+            "3" { Activate-Agent "Longshot" }
+            "4" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "4")
+}
+
+function Agent-Category-HeavyHitters {
+    do {
+        Show-Header
+        Write-Host "=== HEAVY HITTERS — 26-70B Models (needs 48GB+ RAM or GPU) ===" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "1. Legion     - mixtral:8x7b    (~26GB) - Mixture of experts MoE"
+        Write-Host "2. Emma-Frost - command-r:35b   (~20GB) - 128K context long documents"
+        Write-Host "3. Colossus   - llama3.1:70b    (~40GB) - Strongest 70B general"
+        Write-Host "4. Phoenix    - llama3.3:70b    (~40GB) - Latest 70B powerhouse"
+        Write-Host "5. Stryfe     - deepseek-r1:70b (~40GB) - 70B deep reasoning"
+        Write-Host ""
+        Write-Host "6. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Activate-Agent "Legion" }
+            "2" { Activate-Agent "Emma-Frost" }
+            "3" { Activate-Agent "Colossus" }
+            "4" { Activate-Agent "Phoenix" }
+            "5" { Activate-Agent "Stryfe" }
+            "6" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "6")
+}
+
+function Agent-Category-Titans {
+    do {
+        Show-Header
+        Write-Host "=== TITANS — 100B+ Models (upgrade required: 96GB+ RAM) ===" -ForegroundColor DarkRed
+        Write-Host ""
+        Write-Host "1. Onslaught  - mixtral:8x22b       (~80GB)  - Largest MoE model"
+        Write-Host "2. Apocalypse - command-r-plus:104b (~60GB)  - 104B ultimate context"
+        Write-Host ""
+        Write-Host "3. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" { Activate-Agent "Onslaught" }
+            "2" { Activate-Agent "Apocalypse" }
+            "3" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "3")
+}
+
 function Show-AgentMenu {
     Show-Header
-    Write-Info "X-Agent Launcher"
-    Write-Info "----------------"
-    Write-Host "1.  Activate Professor-X  - Strategic reasoning & planning"
-    Write-Host "2.  Activate Forge        - Coding and development"
-    Write-Host "3.  Activate Cyclops      - Cybersecurity analysis"
-    Write-Host "4.  Activate Nightcrawler - Fast lightweight assistant"
-    Write-Host "5.  Activate Wolverine    - Recovery/resilience assistant"
-    Write-Host "6.  Activate Magneto      - Experimental engineering"
-    Write-Host "7.  Activate Scout        - Vision agent (image → UI / describe)"
-    Write-Host "8.  Activate Beast        - Scientific step-by-step reasoning" -ForegroundColor DarkCyan
-    Write-Host "9.  Activate Storm        - Creative writing & long-form content" -ForegroundColor DarkCyan
-    Write-Host "10. Activate Psylocke     - Multilingual & structured output" -ForegroundColor DarkCyan
-    Write-Host "11. Activate Gambit       - Long context conversational tasks" -ForegroundColor DarkCyan
-    Write-Host "12. Activate Colossus     - Maximum power (70B — needs 48GB RAM/GPU)" -ForegroundColor DarkRed
-    Write-Host "13. Run Custom Model"
-    Write-Host "14. Quick Query (one-shot prompt)"
-    Write-Host "15. Smart Agent Router"
-    Write-Host "16. Back"
+    Write-Info "X-Agent Launcher — 34 Agents"
+    Write-Info "-----------------------------"
+    Write-Host "1. Lightning Fast    - Dazzler, Jubilee, Nightcrawler (1-3B)" -ForegroundColor Yellow
+    Write-Host "2. Core Team         - 14 agents, 7-10B workhorses"           -ForegroundColor Cyan
+    Write-Host "3. Enhanced          - 7 agents, 10-22B specialists"          -ForegroundColor DarkCyan
+    Write-Host "4. Vision Agents     - Scout, Rogue, Longshot (multimodal)"   -ForegroundColor Magenta
+    Write-Host "5. Heavy Hitters     - 5 agents, 26-70B (needs 48GB+)"        -ForegroundColor Red
+    Write-Host "6. Titans            - Onslaught, Apocalypse (100B+)"         -ForegroundColor DarkRed
+    Write-Host "7. Run Custom Model"
+    Write-Host "8. Quick Query (one-shot prompt)"
+    Write-Host "9. Smart Agent Router"
+    Write-Host "10. Back"
 }
 
 function Agent-Menu {
     do {
         Show-AgentMenu
-        $choice = Read-Host "Select an agent"
+        $choice = Read-Host "Select category"
         switch ($choice) {
-            "1"  { Activate-Agent "Professor-X" }
-            "2"  { Activate-Agent "Forge" }
-            "3"  { Activate-Agent "Cyclops" }
-            "4"  { Activate-Agent "Nightcrawler" }
-            "5"  { Activate-Agent "Wolverine" }
-            "6"  { Activate-Agent "Magneto" }
-            "7"  { Activate-Scout }
-            "8"  { Activate-Agent "Beast" }
-            "9"  { Activate-Agent "Storm" }
-            "10" { Activate-Agent "Psylocke" }
-            "11" { Activate-Agent "Gambit" }
-            "12" { Activate-Agent "Colossus" }
-            "13" { Run-CustomModel }
-            "14" { Quick-QueryAgent }
-            "15" { Smart-RouteAgent }
-            "16" { return }
+            "1"  { Agent-Category-Lightning }
+            "2"  { Agent-Category-Core }
+            "3"  { Agent-Category-Enhanced }
+            "4"  { Agent-Category-Vision }
+            "5"  { Agent-Category-HeavyHitters }
+            "6"  { Agent-Category-Titans }
+            "7"  { Run-CustomModel }
+            "8"  { Quick-QueryAgent }
+            "9"  { Smart-RouteAgent }
+            "10" { return }
             default { Speak-CHAMP "Invalid agent selection."; Play-ErrorSound; Pause-Menu }
         }
-    } while ($choice -ne "16")
+    } while ($choice -ne "10")
 }
 
 function Show-WolverineMenu {
