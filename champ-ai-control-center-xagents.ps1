@@ -778,8 +778,14 @@ function Install-HostsEntry {
     } else {
         Write-Warn "Administrator rights required to edit the hosts file."
         Write-Info "Relaunching with elevation — approve the UAC prompt to continue."
-        $scriptBlock = "Add-Content -Path '$hostsPath' -Value \"`n$entry\" -Encoding ASCII; Write-Host 'Hosts entry added.' -ForegroundColor Green; Start-Sleep 3"
-        Start-Process pwsh -ArgumentList "-NoProfile -Command `"$scriptBlock`"" -Verb RunAs -Wait
+        $tmpScript = "$env:TEMP\champ-hosts-setup.ps1"
+        Set-Content -Path $tmpScript -Value @"
+Add-Content -Path '$hostsPath' -Value "`n$entry" -Encoding ASCII
+Write-Host 'Hosts entry added: $entry' -ForegroundColor Green
+Start-Sleep 3
+"@
+        Start-Process pwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tmpScript`"" -Verb RunAs -Wait
+        Remove-Item $tmpScript -ErrorAction SilentlyContinue
         Write-OK "Done. '$OpenWebUIHost' now resolves to 127.0.0.1."
     }
     Pause-Menu
