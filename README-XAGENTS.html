@@ -402,7 +402,8 @@
       <tr><td>18</td><td>View Activity Log</td></tr>
       <tr><td>19</td><td><strong>AI Development Tools</strong></td></tr>
       <tr><td>20</td><td><strong>DevOps Control Panel</strong></td></tr>
-      <tr><td>21</td><td>Exit</td></tr>
+      <tr><td>21</td><td><strong>Intelligence Hub</strong></td></tr>
+      <tr><td>22</td><td>Exit</td></tr>
     </tbody>
   </table>
 
@@ -562,6 +563,28 @@
       </tbody>
     </table>
     <p style="font-size:0.85em;color:#aaa;">Ansible runs natively if <code>ansible</code> is on PATH, or falls back to <code>wsl ansible</code> for WSL installations.</p>
+  </div>
+
+  <!-- Intelligence Hub -->
+  <h2>Intelligence Hub (option 21)</h2>
+  <p>New capability layer exposing 10 advanced tools from a single submenu.</p>
+
+  <div class="devtools-section">
+    <table>
+      <thead><tr><th>#</th><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Conversation History</td><td>Persistent per-agent memory — each agent remembers your last 100 exchanges across sessions, stored in <code>CHAMP-History\</code></td></tr>
+        <tr><td>2</td><td>Cloud API Fallback</td><td>Route any prompt to OpenAI (gpt-4o-mini, gpt-4o) or Claude (Haiku, Sonnet) using keys from <code>.env</code>; side-by-side local vs cloud comparison</td></tr>
+        <tr><td>3</td><td>Clipboard AI</td><td>Grab whatever is on the clipboard and fire it at any agent instantly, with an optional instruction prefix</td></tr>
+        <tr><td>4</td><td>WSL Manager</td><td>List distros, launch a shell, run commands, start/stop/set-default, check Linux system info, Forge bash script generator</td></tr>
+        <tr><td>5</td><td>Live Dashboard</td><td>Auto-refreshing war-room view — CPU, RAM, disk, Ollama, Docker, loaded models, port health, recent activity</td></tr>
+        <tr><td>6</td><td>Windows Event Log Watcher</td><td>Browse System / Application / Security logs; Cyclops AI analysis of recent errors; keyword search</td></tr>
+        <tr><td>7</td><td>Network Scanner</td><td>Ping, traceroute, DNS lookup, common port scan, /24 ping sweep, local network info, Cyclops analysis</td></tr>
+        <tr><td>8</td><td>File &amp; Code Analyzer</td><td>Drop any file path — Forge explains &amp; reviews, Cyclops security-audits, Nightcrawler summarises logs, Forge generates unit tests, Professor X analyses folder architecture</td></tr>
+        <tr><td>9</td><td>Git Tools</td><td><code>git status/log/diff/stash/branch</code> in any local repo; Forge commit messages &amp; diff reviews; Cyclops security scan of uncommitted changes</td></tr>
+        <tr><td>10</td><td>LM Studio</td><td>Connect to LM Studio on port 1234; list models, chat, code tasks, security analysis, side-by-side vs Forge</td></tr>
+      </tbody>
+    </table>
   </div>
 
   <!-- First Run -->

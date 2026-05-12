@@ -3752,6 +3752,963 @@ function DevOps-Menu {
     } while ($c -ne "7")
 }
 
+# ============================================================
+# ENHANCEMENT SUITE — Persistent History, API Fallback,
+# Clipboard AI, WSL Manager, Live Dashboard, Event Log,
+# Network Scanner, File Analyzer, Git Tools, LM Studio
+# ============================================================
+
+# -----------------------------
+# Persistent Conversation History
+# Stored per-agent in CHAMP-History\<agent>.json
+# Each entry: { role, content, timestamp }
+# -----------------------------
+$Global:HistoryDir = "$PSScriptRoot\CHAMP-History"
+
+function Get-AgentHistory {
+    param([string]$Agent, [int]$MaxEntries = 20)
+    $file = "$Global:HistoryDir\$Agent.json"
+    if (-not (Test-Path $file)) { return @() }
+    try {
+        $all = Get-Content $file -Raw | ConvertFrom-Json
+        if ($all.Count -gt $MaxEntries) { $all = $all[-$MaxEntries..-1] }
+        return $all
+    } catch { return @() }
+}
+
+function Add-AgentHistory {
+    param([string]$Agent, [string]$Role, [string]$Content)
+    if (-not (Test-Path $Global:HistoryDir)) { New-Item -ItemType Directory -Path $Global:HistoryDir -Force | Out-Null }
+    $file = "$Global:HistoryDir\$Agent.json"
+    $existing = @()
+    if (Test-Path $file) {
+        try { $existing = Get-Content $file -Raw | ConvertFrom-Json } catch { $existing = @() }
+    }
+    $entry = [PSCustomObject]@{ role = $Role; content = $Content; timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") }
+    $existing += $entry
+    if ($existing.Count -gt 100) { $existing = $existing[-100..-1] }
+    $existing | ConvertTo-Json -Depth 5 | Set-Content $file -Encoding UTF8
+}
+
+function Clear-AgentHistory {
+    param([string]$Agent)
+    $file = "$Global:HistoryDir\$Agent.json"
+    if (Test-Path $file) { Remove-Item $file -Force }
+    Write-OK "History cleared for $Agent."
+}
+
+function Show-AgentHistory {
+    param([string]$Agent)
+    $history = Get-AgentHistory -Agent $Agent -MaxEntries 30
+    if ($history.Count -eq 0) { Write-Warn "No history for $Agent."; Pause-Menu; return }
+    Show-Header
+    Write-Info "=== Conversation History: $Agent ==="
+    foreach ($h in $history) {
+        $color = if ($h.role -eq "user") { "Cyan" } else { "White" }
+        Write-Host "[$($h.timestamp)] $($h.role.ToUpper()): " -ForegroundColor $color -NoNewline
+        $preview = if ($h.content.Length -gt 120) { $h.content.Substring(0,120) + "..." } else { $h.content }
+        Write-Host $preview
+    }
+    Pause-Menu
+}
+
+function Invoke-AgentWithHistory {
+    param([string]$Agent, [string]$Prompt)
+    $modelInfo = $Agents[$Agent]
+    if (-not $modelInfo) { Write-Err "Unknown agent: $Agent"; return }
+    $model = $modelInfo.Model
+    $system = $modelInfo.Role
+
+    # Build context string from last 6 exchanges
+    $history = Get-AgentHistory -Agent $Agent -MaxEntries 12
+    $contextBlock = ""
+    if ($history.Count -gt 0) {
+        $contextBlock = "`n`nPrevious conversation:`n"
+        foreach ($h in $history) { $contextBlock += "$($h.role.ToUpper()): $($h.content)`n" }
+        $contextBlock += "`nCurrent question:"
+    }
+
+    $fullPrompt = if ($contextBlock) { "$contextBlock`n$Prompt" } else { $Prompt }
+
+    Add-AgentHistory -Agent $Agent -Role "user" -Content $Prompt
+    Write-Info "[$Agent] Thinking..."
+    $response = Invoke-OllamaWithSystem -Model $model -SystemPrompt $system -UserPrompt $fullPrompt
+    if ($response) {
+        Add-AgentHistory -Agent $Agent -Role "assistant" -Content $response
+        Write-Host "`n" -NoNewline
+        Write-Host $response -ForegroundColor White
+        Write-ActivityLog "[$Agent] History-aware query: $($Prompt.Substring(0,[Math]::Min(60,$Prompt.Length)))"
+    }
+}
+
+function History-Menu {
+    do {
+        Show-Header
+        Write-Host "=== Conversation History Manager ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. Chat with agent (with memory)"
+        Write-Host "2. View agent history"
+        Write-Host "3. Clear agent history"
+        Write-Host "4. Clear ALL agent histories"
+        Write-Host "5. Back"
+        Write-Host ""
+        $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" {
+                $agentNames = $Agents.Keys | Sort-Object
+                $i = 1; foreach ($a in $agentNames) { Write-Host "$i. $a"; $i++ }
+                $pick = Read-Host "Agent number"
+                $agent = @($agentNames)[[int]$pick - 1]
+                if ($agent) {
+                    $prompt = Read-Host "Your message to $agent"
+                    Invoke-AgentWithHistory -Agent $agent -Prompt $prompt
+                    Pause-Menu
+                }
+            }
+            "2" {
+                $agentNames = $Agents.Keys | Sort-Object
+                $i = 1; foreach ($a in $agentNames) { Write-Host "$i. $a"; $i++ }
+                $pick = Read-Host "Agent number"
+                $agent = @($agentNames)[[int]$pick - 1]
+                if ($agent) { Show-AgentHistory -Agent $agent }
+            }
+            "3" {
+                $agentNames = $Agents.Keys | Sort-Object
+                $i = 1; foreach ($a in $agentNames) { Write-Host "$i. $a"; $i++ }
+                $pick = Read-Host "Agent number"
+                $agent = @($agentNames)[[int]$pick - 1]
+                if ($agent) { Clear-AgentHistory -Agent $agent; Pause-Menu }
+            }
+            "4" {
+                $confirm = Read-Host "Type YES to clear all agent histories"
+                if ($confirm -eq "YES") {
+                    if (Test-Path $Global:HistoryDir) { Remove-Item "$Global:HistoryDir\*.json" -Force -ErrorAction SilentlyContinue }
+                    Write-OK "All histories cleared."
+                    Pause-Menu
+                }
+            }
+            "5" { return }
+        }
+    } while ($choice -ne "5")
+}
+
+# -----------------------------
+# Cloud API Fallback (OpenAI / Claude)
+# Uses keys from .env: OPENAI_API_KEY, ANTHROPIC_API_KEY
+# -----------------------------
+function Invoke-OpenAIFallback {
+    param([string]$Prompt, [string]$System = "You are a helpful assistant.", [string]$Model = "gpt-4o-mini")
+    $key = Get-EnvValue "OPENAI_API_KEY"
+    if (-not $key) { Write-Err "OPENAI_API_KEY not set. Use API Key Manager (option 19 > 17)."; Pause-Menu; return $null }
+    $body = @{
+        model    = $Model
+        messages = @(
+            @{ role = "system"; content = $System }
+            @{ role = "user";   content = $Prompt }
+        )
+        max_tokens = 2048
+    } | ConvertTo-Json -Depth 5
+    try {
+        $resp = Invoke-RestMethod -Uri "https://api.openai.com/v1/chat/completions" `
+            -Method POST -ContentType "application/json" `
+            -Headers @{ Authorization = "Bearer $key" } -Body $body
+        return $resp.choices[0].message.content
+    } catch { Write-Err "OpenAI call failed: $_"; return $null }
+}
+
+function Invoke-ClaudeFallback {
+    param([string]$Prompt, [string]$System = "You are a helpful assistant.", [string]$Model = "claude-haiku-4-5-20251001")
+    $key = Get-EnvValue "ANTHROPIC_API_KEY"
+    if (-not $key) { Write-Err "ANTHROPIC_API_KEY not set. Use API Key Manager (option 19 > 17)."; Pause-Menu; return $null }
+    $body = @{
+        model      = $Model
+        max_tokens = 2048
+        system     = $System
+        messages   = @(@{ role = "user"; content = $Prompt })
+    } | ConvertTo-Json -Depth 5
+    try {
+        $resp = Invoke-RestMethod -Uri "https://api.anthropic.com/v1/messages" `
+            -Method POST -ContentType "application/json" `
+            -Headers @{ "x-api-key" = $key; "anthropic-version" = "2023-06-01" } -Body $body
+        return $resp.content[0].text
+    } catch { Write-Err "Claude API call failed: $_"; return $null }
+}
+
+function CloudFallback-Menu {
+    do {
+        Show-Header
+        Write-Host "=== Cloud API Fallback ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. Ask OpenAI (gpt-4o-mini)"
+        Write-Host "2. Ask OpenAI (gpt-4o)"
+        Write-Host "3. Ask Claude (claude-haiku — fast)"
+        Write-Host "4. Ask Claude (claude-sonnet-4-6 — powerful)"
+        Write-Host "5. Side-by-side: Local Forge vs OpenAI vs Claude"
+        Write-Host "6. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" {
+                $prompt = Read-Host "Prompt"
+                $r = Invoke-OpenAIFallback -Prompt $prompt -Model "gpt-4o-mini"
+                if ($r) { Write-Host "`nOpenAI (gpt-4o-mini):" -ForegroundColor Green; Write-Host $r }
+                Pause-Menu
+            }
+            "2" {
+                $prompt = Read-Host "Prompt"
+                $r = Invoke-OpenAIFallback -Prompt $prompt -Model "gpt-4o"
+                if ($r) { Write-Host "`nOpenAI (gpt-4o):" -ForegroundColor Green; Write-Host $r }
+                Pause-Menu
+            }
+            "3" {
+                $prompt = Read-Host "Prompt"
+                $r = Invoke-ClaudeFallback -Prompt $prompt -Model "claude-haiku-4-5-20251001"
+                if ($r) { Write-Host "`nClaude Haiku:" -ForegroundColor Magenta; Write-Host $r }
+                Pause-Menu
+            }
+            "4" {
+                $prompt = Read-Host "Prompt"
+                $r = Invoke-ClaudeFallback -Prompt $prompt -Model "claude-sonnet-4-6"
+                if ($r) { Write-Host "`nClaude Sonnet:" -ForegroundColor Magenta; Write-Host $r }
+                Pause-Menu
+            }
+            "5" {
+                $prompt = Read-Host "Prompt for side-by-side comparison"
+                Write-Info "Querying Forge (local)..."
+                $local = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $Agents["Forge"].Role -UserPrompt $prompt
+                Write-Info "Querying OpenAI..."
+                $openai = Invoke-OpenAIFallback -Prompt $prompt
+                Write-Info "Querying Claude..."
+                $claude = Invoke-ClaudeFallback -Prompt $prompt
+                Write-Host "`n--- Forge (local) ---" -ForegroundColor Yellow
+                Write-Host $local
+                Write-Host "`n--- OpenAI ---" -ForegroundColor Green
+                Write-Host $openai
+                Write-Host "`n--- Claude ---" -ForegroundColor Magenta
+                Write-Host $claude
+                Pause-Menu
+            }
+            "6" { return }
+        }
+    } while ($c -ne "6")
+}
+
+# -----------------------------
+# Clipboard AI
+# Grabs clipboard text, fires at chosen agent
+# -----------------------------
+function Invoke-ClipboardAI {
+    Show-Header
+    Write-Host "=== Clipboard AI ===" -ForegroundColor Yellow
+    Write-Host ""
+    $clip = Get-Clipboard -Raw
+    if (-not $clip) { Write-Warn "Clipboard is empty."; Pause-Menu; return }
+    $preview = if ($clip.Length -gt 200) { $clip.Substring(0,200) + "..." } else { $clip }
+    Write-Info "Clipboard content:"
+    Write-Host $preview -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Send to:"
+    $agentNames = $Agents.Keys | Sort-Object
+    $i = 1; foreach ($a in $agentNames) { Write-Host "$i. $a"; $i++ }
+    Write-Host "0. Cancel"
+    $pick = Read-Host "Agent number"
+    if ($pick -eq "0") { return }
+    $agent = @($agentNames)[[int]$pick - 1]
+    if (-not $agent) { Write-Err "Invalid selection."; Pause-Menu; return }
+    $extra = Read-Host "Add instruction (or press Enter to send as-is)"
+    $prompt = if ($extra) { "$extra`n`n$clip" } else { $clip }
+    Write-Info "Sending to $agent..."
+    $response = Invoke-OllamaWithSystem -Model $Agents[$agent].Model -SystemPrompt $Agents[$agent].Role -UserPrompt $prompt
+    Write-Host ""
+    Write-Host $response -ForegroundColor White
+    $save = Read-Host "Save response to session file? (y/n)"
+    if ($save -eq "y") {
+        $dir = "$PSScriptRoot\CHAMP-Sessions"
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $file = "$dir\clipboard-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+        "# Clipboard AI — $agent`n`n## Input`n$clip`n`n## Response`n$response" | Set-Content $file -Encoding UTF8
+        Write-OK "Saved: $file"
+    }
+    Write-ActivityLog "Clipboard AI — $agent"
+    Pause-Menu
+}
+
+# -----------------------------
+# WSL Manager
+# -----------------------------
+function WSL-Menu {
+    do {
+        Show-Header
+        Write-Host "=== WSL Manager ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. List WSL distros"
+        Write-Host "2. Launch default distro shell"
+        Write-Host "3. Run a command in default distro"
+        Write-Host "4. Start a distro"
+        Write-Host "5. Stop a distro (wsl --terminate)"
+        Write-Host "6. Set default distro"
+        Write-Host "7. WSL system info (uname / df / free)"
+        Write-Host "8. Forge: generate a Linux bash script"
+        Write-Host "9. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" {
+                wsl --list --verbose
+                Pause-Menu
+            }
+            "2" {
+                Write-Info "Launching WSL shell (type 'exit' to return)..."
+                wsl
+            }
+            "3" {
+                $cmd = Read-Host "Command to run in WSL"
+                wsl -- $cmd
+                Pause-Menu
+            }
+            "4" {
+                $distro = Read-Host "Distro name"
+                wsl -d $distro -- echo "Started $distro"
+                Write-OK "Distro $distro started."
+                Pause-Menu
+            }
+            "5" {
+                $distro = Read-Host "Distro name to terminate"
+                wsl --terminate $distro
+                Write-OK "Terminated $distro."
+                Pause-Menu
+            }
+            "6" {
+                $distro = Read-Host "Distro name to set as default"
+                wsl --set-default $distro
+                Write-OK "Default set to $distro."
+                Pause-Menu
+            }
+            "7" {
+                Write-Info "--- uname -a ---"
+                wsl -- uname -a
+                Write-Info "--- df -h ---"
+                wsl -- df -h
+                Write-Info "--- free -h ---"
+                wsl -- free -h
+                Pause-Menu
+            }
+            "8" {
+                $task = Read-Host "Describe the bash script you need"
+                $system = "You are an expert Linux bash scripter. Output only the bash script with no explanation or markdown fences."
+                $script = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $system -UserPrompt "Write a bash script that: $task"
+                if ($script) {
+                    Write-Host "`n$script" -ForegroundColor White
+                    $save = Read-Host "Save as script.sh? (y/n)"
+                    if ($save -eq "y") {
+                        $name = Read-Host "Filename (without .sh)"
+                        $script | Set-Content "$PSScriptRoot\$name.sh" -Encoding UTF8
+                        Write-OK "Saved: $name.sh"
+                    }
+                }
+                Pause-Menu
+            }
+            "9" { return }
+        }
+    } while ($c -ne "9")
+}
+
+# -----------------------------
+# Live Dashboard
+# Auto-refreshes every 5 seconds showing system + service health
+# -----------------------------
+function Show-LiveDashboard {
+    Write-Info "Live Dashboard active. Press Ctrl+C to exit."
+    Start-Sleep -Milliseconds 800
+    while ($true) {
+        Clear-Host
+        Write-Host "====================================================" -ForegroundColor DarkCyan
+        Write-Host "     CEREBRO LIVE DASHBOARD  $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Cyan
+        Write-Host "====================================================" -ForegroundColor DarkCyan
+
+        # System resources
+        $os = Get-CimInstance Win32_OperatingSystem
+        $ramFree = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
+        $ramTotal = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+        $ramUsedPct = [math]::Round((($ramTotal - $ramFree) / $ramTotal) * 100, 0)
+        $cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+        Write-Host ""
+        Write-Host " SYSTEM" -ForegroundColor Yellow
+        $cpuColor = if ($cpu -gt 80) { "Red" } elseif ($cpu -gt 50) { "Yellow" } else { "Green" }
+        Write-Host "  CPU    : $cpu%" -ForegroundColor $cpuColor
+        $ramColor = if ($ramUsedPct -gt 85) { "Red" } elseif ($ramUsedPct -gt 65) { "Yellow" } else { "Green" }
+        Write-Host "  RAM    : $($ramTotal - $ramFree) GB / $ramTotal GB  ($ramUsedPct%)" -ForegroundColor $ramColor
+
+        # Disk
+        $drives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -gt 0 }
+        foreach ($d in $drives) {
+            $usedGB = [math]::Round($d.Used / 1GB, 1)
+            $freeGB = [math]::Round($d.Free / 1GB, 1)
+            $totalGB = $usedGB + $freeGB
+            if ($totalGB -gt 0) {
+                $pct = [math]::Round(($usedGB / $totalGB) * 100, 0)
+                $dc = if ($pct -gt 90) { "Red" } elseif ($pct -gt 75) { "Yellow" } else { "Green" }
+                Write-Host "  Disk $($d.Name): $usedGB/$totalGB GB ($pct%)" -ForegroundColor $dc
+            }
+        }
+
+        # Services
+        Write-Host ""
+        Write-Host " SERVICES" -ForegroundColor Yellow
+        $ollamaRunning = Test-OllamaRunning
+        $ollamaColor = if ($ollamaRunning) { "Green" } else { "Red" }
+        $ollamaStatus = if ($ollamaRunning) { "RUNNING" } else { "STOPPED" }
+        Write-Host "  Ollama      : $ollamaStatus" -ForegroundColor $ollamaColor
+
+        $dockerRunning = Test-DockerRunning
+        $dockerColor = if ($dockerRunning) { "Green" } else { "Red" }
+        $dockerStatus = if ($dockerRunning) { "RUNNING" } else { "STOPPED" }
+        Write-Host "  Docker      : $dockerStatus" -ForegroundColor $dockerColor
+
+        # Open WebUI container
+        if ($dockerRunning) {
+            try {
+                $webUIState = docker inspect --format='{{.State.Status}}' $OpenWebUIContainer 2>$null
+                $webUIColor = if ($webUIState -eq "running") { "Green" } else { "Red" }
+                Write-Host "  Open WebUI  : $($webUIState.ToUpper())" -ForegroundColor $webUIColor
+            } catch {
+                Write-Host "  Open WebUI  : UNKNOWN" -ForegroundColor Gray
+            }
+        }
+
+        # Port checks
+        Write-Host ""
+        Write-Host " PORTS" -ForegroundColor Yellow
+        $ports = @{ "Ollama(11434)" = 11434; "WebUI(3000)" = 3000; "LMStudio(1234)" = 1234; "Jupyter(8888)" = 8888 }
+        foreach ($name in $ports.Keys) {
+            try {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $connect = $tcp.BeginConnect("127.0.0.1", $ports[$name], $null, $null)
+                $wait = $connect.AsyncWaitHandle.WaitOne(300, $false)
+                $tcp.Close()
+                $pc = if ($wait) { "Green" } else { "Red" }
+                $ps = if ($wait) { "ACTIVE" } else { "INACTIVE" }
+            } catch { $pc = "Red"; $ps = "INACTIVE" }
+            Write-Host ("  {0,-20}: {1}" -f $name, $ps) -ForegroundColor $pc
+        }
+
+        # Loaded Ollama models
+        if ($ollamaRunning) {
+            try {
+                $loaded = Invoke-RestMethod -Uri "http://localhost:11434/api/ps" -TimeoutSec 2 -ErrorAction Stop
+                Write-Host ""
+                Write-Host " LOADED MODELS" -ForegroundColor Yellow
+                if ($loaded.models -and $loaded.models.Count -gt 0) {
+                    foreach ($m in $loaded.models) { Write-Host "  $($m.name)" -ForegroundColor Cyan }
+                } else { Write-Host "  (none)" -ForegroundColor Gray }
+            } catch {}
+        }
+
+        # Recent log
+        Write-Host ""
+        Write-Host " RECENT ACTIVITY" -ForegroundColor Yellow
+        if (Test-Path $ActivityLogPath) {
+            $lines = Get-Content $ActivityLogPath -Tail 4
+            foreach ($l in $lines) { Write-Host "  $l" -ForegroundColor DarkGray }
+        }
+
+        Write-Host ""
+        Write-Host " [Ctrl+C to exit dashboard]" -ForegroundColor DarkGray
+        Start-Sleep -Seconds 5
+    }
+}
+
+# -----------------------------
+# Windows Event Log Watcher (Cyclops)
+# -----------------------------
+function EventLog-Menu {
+    do {
+        Show-Header
+        Write-Host "=== Windows Event Log Watcher ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. Show recent System errors (last 20)"
+        Write-Host "2. Show recent Application errors (last 20)"
+        Write-Host "3. Show Security warnings (last 20)"
+        Write-Host "4. Cyclops AI analysis of System errors"
+        Write-Host "5. Cyclops AI analysis of Application errors"
+        Write-Host "6. Search event log by keyword"
+        Write-Host "7. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" {
+                Write-Info "Recent System errors:"
+                Get-EventLog -LogName System -EntryType Error -Newest 20 2>$null |
+                    Format-Table TimeGenerated, Source, Message -AutoSize -Wrap | Out-Host
+                Pause-Menu
+            }
+            "2" {
+                Write-Info "Recent Application errors:"
+                Get-EventLog -LogName Application -EntryType Error -Newest 20 2>$null |
+                    Format-Table TimeGenerated, Source, Message -AutoSize -Wrap | Out-Host
+                Pause-Menu
+            }
+            "3" {
+                Write-Info "Recent Security warnings:"
+                Get-EventLog -LogName Security -EntryType Warning -Newest 20 2>$null |
+                    Format-Table TimeGenerated, Source, Message -AutoSize -Wrap | Out-Host
+                Pause-Menu
+            }
+            "4" {
+                Write-Info "Gathering System errors for Cyclops..."
+                $events = Get-EventLog -LogName System -EntryType Error -Newest 15 2>$null |
+                    Select-Object -ExpandProperty Message | Out-String
+                if (-not $events) { Write-Warn "No System errors found."; Pause-Menu; break }
+                $analysis = Invoke-OllamaWithSystem -Model $Agents["Cyclops"].Model `
+                    -SystemPrompt "You are a Windows system analyst. Review these Windows Event Log errors and summarise the root causes and recommended fixes in bullet points." `
+                    -UserPrompt $events
+                Write-Host "`n$analysis" -ForegroundColor White
+                Pause-Menu
+            }
+            "5" {
+                Write-Info "Gathering Application errors for Cyclops..."
+                $events = Get-EventLog -LogName Application -EntryType Error -Newest 15 2>$null |
+                    Select-Object -ExpandProperty Message | Out-String
+                if (-not $events) { Write-Warn "No Application errors found."; Pause-Menu; break }
+                $analysis = Invoke-OllamaWithSystem -Model $Agents["Cyclops"].Model `
+                    -SystemPrompt "You are a Windows system analyst. Review these Windows Application Event Log errors and summarise root causes and fixes." `
+                    -UserPrompt $events
+                Write-Host "`n$analysis" -ForegroundColor White
+                Pause-Menu
+            }
+            "6" {
+                $kw = Read-Host "Keyword to search"
+                Write-Info "Searching System and Application logs for '$kw'..."
+                $results = @()
+                $results += Get-EventLog -LogName System -Newest 500 2>$null | Where-Object { $_.Message -like "*$kw*" } | Select-Object -First 10
+                $results += Get-EventLog -LogName Application -Newest 500 2>$null | Where-Object { $_.Message -like "*$kw*" } | Select-Object -First 10
+                if ($results.Count -eq 0) { Write-Warn "No matches found." } else {
+                    $results | Format-Table TimeGenerated, Log, Source, EntryType, Message -AutoSize -Wrap | Out-Host
+                }
+                Pause-Menu
+            }
+            "7" { return }
+        }
+    } while ($c -ne "7")
+}
+
+# -----------------------------
+# Network Scanner
+# -----------------------------
+function NetworkScanner-Menu {
+    do {
+        Show-Header
+        Write-Host "=== Network Scanner ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. Ping a host"
+        Write-Host "2. Traceroute"
+        Write-Host "3. DNS lookup"
+        Write-Host "4. Scan common ports on a host"
+        Write-Host "5. Local network ping sweep (/24)"
+        Write-Host "6. Show local network info"
+        Write-Host "7. Cyclops: analyse scan results"
+        Write-Host "8. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" {
+                $host_ = Read-Host "Host or IP"
+                Test-Connection -ComputerName $host_ -Count 4 | Format-Table Address, ResponseTime, StatusCode -AutoSize | Out-Host
+                Pause-Menu
+            }
+            "2" {
+                $host_ = Read-Host "Host or IP"
+                tracert $host_
+                Pause-Menu
+            }
+            "3" {
+                $host_ = Read-Host "Hostname to resolve"
+                [System.Net.Dns]::GetHostAddresses($host_) | ForEach-Object { Write-Host $_.IPAddressToString }
+                Pause-Menu
+            }
+            "4" {
+                $host_ = Read-Host "Host or IP"
+                $ports = @(21,22,23,25,53,80,443,445,3389,8080,8443,11434,3000,1234)
+                Write-Info "Scanning $host_ on $($ports.Count) common ports..."
+                $results = @()
+                foreach ($p in $ports) {
+                    try {
+                        $tcp = New-Object System.Net.Sockets.TcpClient
+                        $conn = $tcp.BeginConnect($host_, $p, $null, $null)
+                        $open = $conn.AsyncWaitHandle.WaitOne(500, $false)
+                        $tcp.Close()
+                        $status = if ($open) { "OPEN" } else { "CLOSED" }
+                        $color  = if ($open) { "Green" } else { "DarkGray" }
+                    } catch { $status = "CLOSED"; $color = "DarkGray" }
+                    if ($open) { Write-Host "  Port $p : $status" -ForegroundColor $color }
+                    $results += "$p : $status"
+                }
+                $Global:LastScanResults = ($results -join "`n") + "`nHost: $host_"
+                Pause-Menu
+            }
+            "5" {
+                $base = Read-Host "Base IP (e.g. 192.168.1)"
+                Write-Info "Pinging $base.1 - $base.254 (this may take a moment)..."
+                $alive = @()
+                1..254 | ForEach-Object {
+                    $ip = "$base.$_"
+                    $r = Test-Connection -ComputerName $ip -Count 1 -Quiet -TimeoutSeconds 1
+                    if ($r) { Write-Host "  $ip ALIVE" -ForegroundColor Green; $alive += $ip }
+                }
+                Write-OK "`n$($alive.Count) hosts alive."
+                $Global:LastScanResults = "Ping sweep $base.0/24`nAlive: $($alive -join ', ')"
+                Pause-Menu
+            }
+            "6" {
+                Write-Info "Network adapters:"
+                Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" } |
+                    Format-Table InterfaceAlias, IPAddress, PrefixLength -AutoSize | Out-Host
+                Write-Info "Default gateway:"
+                Get-NetRoute -DestinationPrefix "0.0.0.0/0" | Format-Table InterfaceAlias, NextHop -AutoSize | Out-Host
+                Pause-Menu
+            }
+            "7" {
+                $data = if ($Global:LastScanResults) { $Global:LastScanResults } else {
+                    Read-Host "Paste scan output to analyse"
+                }
+                $analysis = Invoke-OllamaWithSystem -Model $Agents["Cyclops"].Model `
+                    -SystemPrompt "You are a network security analyst. Review these scan results and identify potential security risks, open attack surfaces, and recommendations." `
+                    -UserPrompt $data
+                Write-Host "`n$analysis" -ForegroundColor White
+                Pause-Menu
+            }
+            "8" { return }
+        }
+    } while ($c -ne "8")
+}
+$Global:LastScanResults = ""
+
+# -----------------------------
+# File / Code Drop Analyzer
+# -----------------------------
+function FileAnalyzer-Menu {
+    do {
+        Show-Header
+        Write-Host "=== File & Code Analyzer ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. Analyze a file (Forge — explain / review)"
+        Write-Host "2. Security audit a file (Cyclops)"
+        Write-Host "3. Summarize a text/log file (Nightcrawler)"
+        Write-Host "4. Generate unit tests for a code file (Forge)"
+        Write-Host "5. Explain architecture of a folder (Professor X)"
+        Write-Host "6. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" {
+                $path = Read-Host "File path"
+                if (-not (Test-Path $path)) { Write-Err "File not found."; Pause-Menu; break }
+                $content = Get-Content $path -Raw -Encoding UTF8
+                if ($content.Length -gt 8000) { $content = $content.Substring(0, 8000) + "`n[...truncated]" }
+                $ext = [System.IO.Path]::GetExtension($path)
+                $analysis = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model `
+                    -SystemPrompt "You are a senior software engineer. Review the following $ext file and explain what it does, identify any bugs or improvements, and summarize key logic." `
+                    -UserPrompt $content
+                Write-Host "`n$analysis" -ForegroundColor White
+                Pause-Menu
+            }
+            "2" {
+                $path = Read-Host "File path"
+                if (-not (Test-Path $path)) { Write-Err "File not found."; Pause-Menu; break }
+                $content = Get-Content $path -Raw -Encoding UTF8
+                if ($content.Length -gt 8000) { $content = $content.Substring(0, 8000) + "`n[...truncated]" }
+                $analysis = Invoke-OllamaWithSystem -Model $Agents["Cyclops"].Model `
+                    -SystemPrompt "You are a security code auditor. Review this file for security vulnerabilities, hardcoded secrets, injection risks, insecure patterns, and OWASP concerns. List findings with severity." `
+                    -UserPrompt $content
+                Write-Host "`n$analysis" -ForegroundColor White
+                Pause-Menu
+            }
+            "3" {
+                $path = Read-Host "File path"
+                if (-not (Test-Path $path)) { Write-Err "File not found."; Pause-Menu; break }
+                $content = Get-Content $path -Raw -Encoding UTF8
+                if ($content.Length -gt 6000) { $content = $content.Substring(0, 6000) + "`n[...truncated]" }
+                $summary = Invoke-OllamaWithSystem -Model $Agents["Nightcrawler"].Model `
+                    -SystemPrompt "You are a concise summarizer. Give a short bullet-point summary of this file's contents." `
+                    -UserPrompt $content
+                Write-Host "`n$summary" -ForegroundColor White
+                Pause-Menu
+            }
+            "4" {
+                $path = Read-Host "Code file path"
+                if (-not (Test-Path $path)) { Write-Err "File not found."; Pause-Menu; break }
+                $content = Get-Content $path -Raw -Encoding UTF8
+                if ($content.Length -gt 6000) { $content = $content.Substring(0, 6000) }
+                $lang = [System.IO.Path]::GetExtension($path).TrimStart(".")
+                $tests = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model `
+                    -SystemPrompt "You are a test engineer. Write unit tests for the following $lang code. Output only the test code." `
+                    -UserPrompt $content
+                Write-Host "`n$tests" -ForegroundColor White
+                $save = Read-Host "Save tests to file? (y/n)"
+                if ($save -eq "y") {
+                    $outPath = [System.IO.Path]::ChangeExtension($path, ".test.$lang")
+                    $tests | Set-Content $outPath -Encoding UTF8
+                    Write-OK "Saved: $outPath"
+                }
+                Pause-Menu
+            }
+            "5" {
+                $folder = Read-Host "Folder path"
+                if (-not (Test-Path $folder)) { Write-Err "Folder not found."; Pause-Menu; break }
+                $tree = Get-ChildItem $folder -Recurse -File |
+                    Select-Object -First 80 |
+                    ForEach-Object { $_.FullName.Replace($folder, "").TrimStart("\") } |
+                    Out-String
+                $analysis = Invoke-OllamaWithSystem -Model $Agents["Professor-X"].Model `
+                    -SystemPrompt "You are a software architect. Based on the following file tree, describe the project architecture, likely tech stack, and structure in plain English." `
+                    -UserPrompt $tree
+                Write-Host "`n$analysis" -ForegroundColor White
+                Pause-Menu
+            }
+            "6" { return }
+        }
+    } while ($c -ne "6")
+}
+
+# -----------------------------
+# Git Tools (local repo operations + AI assist)
+# -----------------------------
+function GitTools-Menu {
+    do {
+        Show-Header
+        Write-Host "=== Git Tools ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1. git status"
+        Write-Host "2. git log (last 10)"
+        Write-Host "3. git diff (staged)"
+        Write-Host "4. Forge: generate commit message from diff"
+        Write-Host "5. Forge: review current diff for issues"
+        Write-Host "6. git stash / unstash"
+        Write-Host "7. git branch list"
+        Write-Host "8. Cyclops: security scan of uncommitted changes"
+        Write-Host "9. Set working repo path"
+        Write-Host "0. Back"
+        Write-Host ""
+        $cfg = Get-DevOpsConfig
+        $repoPath = if ($cfg.GitRepoPath) { $cfg.GitRepoPath } else { (Get-Location).Path }
+        Write-Info "Repo: $repoPath"
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" {
+                Push-Location $repoPath
+                git status
+                Pop-Location
+                Pause-Menu
+            }
+            "2" {
+                Push-Location $repoPath
+                git log --oneline -10
+                Pop-Location
+                Pause-Menu
+            }
+            "3" {
+                Push-Location $repoPath
+                git diff --staged
+                Pop-Location
+                Pause-Menu
+            }
+            "4" {
+                Push-Location $repoPath
+                $diff = git diff --staged
+                Pop-Location
+                if (-not $diff) { Write-Warn "No staged changes."; Pause-Menu; break }
+                $msg = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model `
+                    -SystemPrompt "You are a Git expert. Based on this diff, write a concise, conventional commit message (type: subject). Output only the commit message, nothing else." `
+                    -UserPrompt $diff
+                Write-Host "`nSuggested commit message:" -ForegroundColor Green
+                Write-Host $msg -ForegroundColor White
+                $use = Read-Host "Use this message? (y/n)"
+                if ($use -eq "y") {
+                    Push-Location $repoPath
+                    git commit -m $msg
+                    Pop-Location
+                }
+                Pause-Menu
+            }
+            "5" {
+                Push-Location $repoPath
+                $diff = git diff HEAD
+                Pop-Location
+                if (-not $diff) { Write-Warn "No changes to review."; Pause-Menu; break }
+                $review = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model `
+                    -SystemPrompt "You are a senior code reviewer. Review this git diff for bugs, logic errors, style issues, and improvements. Be concise and use bullet points." `
+                    -UserPrompt $diff
+                Write-Host "`n$review" -ForegroundColor White
+                Pause-Menu
+            }
+            "6" {
+                Write-Host "1. Stash changes   2. Pop stash   3. List stashes"
+                $sc = Read-Host "Select"
+                Push-Location $repoPath
+                switch ($sc) {
+                    "1" { $msg = Read-Host "Stash message"; git stash push -m $msg }
+                    "2" { git stash pop }
+                    "3" { git stash list }
+                }
+                Pop-Location
+                Pause-Menu
+            }
+            "7" {
+                Push-Location $repoPath
+                git branch -a
+                Pop-Location
+                Pause-Menu
+            }
+            "8" {
+                Push-Location $repoPath
+                $diff = git diff HEAD
+                Pop-Location
+                if (-not $diff) { Write-Warn "No uncommitted changes."; Pause-Menu; break }
+                $audit = Invoke-OllamaWithSystem -Model $Agents["Cyclops"].Model `
+                    -SystemPrompt "You are a security code auditor. Review this git diff for hardcoded secrets, API keys, passwords, security vulnerabilities, and risky code patterns. List any findings with severity." `
+                    -UserPrompt $diff
+                Write-Host "`n$audit" -ForegroundColor White
+                Pause-Menu
+            }
+            "9" {
+                $newPath = Read-Host "Repo path"
+                if (Test-Path $newPath) {
+                    $cfg.GitRepoPath = $newPath
+                    Save-DevOpsConfig $cfg
+                    Write-OK "Repo path saved: $newPath"
+                } else { Write-Err "Path not found." }
+                Pause-Menu
+            }
+            "0" { return }
+        }
+    } while ($c -ne "0")
+}
+
+# -----------------------------
+# LM Studio Support
+# LM Studio runs an OpenAI-compatible API at localhost:1234
+# -----------------------------
+function Invoke-LMStudio {
+    param([string]$Prompt, [string]$System = "You are a helpful assistant.", [string]$Model = "")
+    $uri = "http://localhost:1234/v1/chat/completions"
+    # Get available model if none specified
+    if (-not $Model) {
+        try {
+            $models = Invoke-RestMethod -Uri "http://localhost:1234/v1/models" -TimeoutSec 3
+            if ($models.data -and $models.data.Count -gt 0) { $Model = $models.data[0].id }
+        } catch { Write-Err "LM Studio not reachable on port 1234. Start LM Studio and load a model."; return $null }
+    }
+    $body = @{
+        model    = $Model
+        messages = @(
+            @{ role = "system"; content = $System }
+            @{ role = "user";   content = $Prompt }
+        )
+        max_tokens  = 2048
+        temperature = 0.7
+    } | ConvertTo-Json -Depth 5
+    try {
+        $resp = Invoke-RestMethod -Uri $uri -Method POST -ContentType "application/json" -Body $body -TimeoutSec 120
+        return $resp.choices[0].message.content
+    } catch { Write-Err "LM Studio request failed: $_"; return $null }
+}
+
+function LMStudio-Menu {
+    do {
+        Show-Header
+        Write-Host "=== LM Studio ===" -ForegroundColor Yellow
+        Write-Host "(LM Studio must be running with a model loaded on port 1234)" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "1. List loaded models"
+        Write-Host "2. Chat with loaded model"
+        Write-Host "3. Side-by-side: LM Studio vs Ollama (Forge)"
+        Write-Host "4. Code task (LM Studio)"
+        Write-Host "5. Security analysis (LM Studio)"
+        Write-Host "6. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1" {
+                try {
+                    $models = Invoke-RestMethod -Uri "http://localhost:1234/v1/models" -TimeoutSec 3
+                    Write-Info "LM Studio loaded models:"
+                    $models.data | ForEach-Object { Write-Host "  $($_.id)" -ForegroundColor Cyan }
+                } catch { Write-Err "LM Studio not reachable on port 1234." }
+                Pause-Menu
+            }
+            "2" {
+                $prompt = Read-Host "Your prompt"
+                $r = Invoke-LMStudio -Prompt $prompt
+                if ($r) { Write-Host "`nLM Studio:" -ForegroundColor Yellow; Write-Host $r -ForegroundColor White }
+                Pause-Menu
+            }
+            "3" {
+                $prompt = Read-Host "Prompt"
+                Write-Info "Querying LM Studio..."
+                $lms = Invoke-LMStudio -Prompt $prompt
+                Write-Info "Querying Forge (Ollama)..."
+                $forge = Invoke-OllamaWithSystem -Model $Agents["Forge"].Model -SystemPrompt $Agents["Forge"].Role -UserPrompt $prompt
+                Write-Host "`n--- LM Studio ---" -ForegroundColor Yellow
+                Write-Host $lms
+                Write-Host "`n--- Forge (Ollama) ---" -ForegroundColor Cyan
+                Write-Host $forge
+                Pause-Menu
+            }
+            "4" {
+                $task = Read-Host "Code task description"
+                $r = Invoke-LMStudio -Prompt $task -System "You are an expert programmer. Write clean, working code. Output only the code."
+                if ($r) { Write-Host "`n$r" -ForegroundColor White }
+                Pause-Menu
+            }
+            "5" {
+                $target = Read-Host "Paste code or describe what to analyze"
+                $r = Invoke-LMStudio -Prompt $target -System "You are a security analyst. Identify vulnerabilities, risks, and recommendations."
+                if ($r) { Write-Host "`n$r" -ForegroundColor White }
+                Pause-Menu
+            }
+            "6" { return }
+        }
+    } while ($c -ne "6")
+}
+
+# -----------------------------
+# Intelligence Hub — master submenu for all new enhancements
+# -----------------------------
+function IntelHub-Menu {
+    do {
+        Show-Header
+        Write-Host "=== CEREBRO Intelligence Hub ===" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "1.  Conversation History (persistent agent memory)" -ForegroundColor Cyan
+        Write-Host "2.  Cloud API Fallback (OpenAI / Claude)"           -ForegroundColor Cyan
+        Write-Host "3.  Clipboard AI"                                   -ForegroundColor Cyan
+        Write-Host "4.  WSL Manager"                                    -ForegroundColor Cyan
+        Write-Host "5.  Live Dashboard"                                 -ForegroundColor Cyan
+        Write-Host "6.  Windows Event Log Watcher"                     -ForegroundColor Cyan
+        Write-Host "7.  Network Scanner"                               -ForegroundColor Cyan
+        Write-Host "8.  File & Code Analyzer"                          -ForegroundColor Cyan
+        Write-Host "9.  Git Tools"                                      -ForegroundColor Cyan
+        Write-Host "10. LM Studio"                                      -ForegroundColor Cyan
+        Write-Host "11. Back"
+        Write-Host ""
+        $c = Read-Host "Select"
+        switch ($c) {
+            "1"  { History-Menu }
+            "2"  { CloudFallback-Menu }
+            "3"  { Invoke-ClipboardAI }
+            "4"  { WSL-Menu }
+            "5"  { Show-LiveDashboard }
+            "6"  { EventLog-Menu }
+            "7"  { NetworkScanner-Menu }
+            "8"  { FileAnalyzer-Menu }
+            "9"  { GitTools-Menu }
+            "10" { LMStudio-Menu }
+            "11" { return }
+            default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
+        }
+    } while ($c -ne "11")
+}
+
 # -----------------------------
 # Sub-menus
 # -----------------------------
@@ -3843,7 +4800,8 @@ function Show-MainMenu {
     Write-Host "18. View Activity Log"
     Write-Host "19. AI Development Tools" -ForegroundColor Cyan
     Write-Host "20. DevOps Control Panel" -ForegroundColor Magenta
-    Write-Host "21. Exit"
+    Write-Host "21. Intelligence Hub" -ForegroundColor Yellow
+    Write-Host "22. Exit"
     Write-Host ""
     if ($EnableVoice)  { Write-OK   "Voice  : ON"  } else { Write-Warn "Voice  : OFF" }
     if ($EnableSounds) { Write-OK   "Sounds : ON"  } else { Write-Warn "Sounds : OFF" }
@@ -3878,7 +4836,8 @@ do {
         "18" { Show-ActivityLog }
         "19" { AIDevTools-Menu }
         "20" { DevOps-Menu }
-        "21" { Speak-CHAMP "CEREBRO shutting down. Goodbye, Champ."; Write-ActivityLog "CHAMP AI Control Center exited"; Write-Host "Exiting..." }
+        "21" { IntelHub-Menu }
+        "22" { Speak-CHAMP "CEREBRO shutting down. Goodbye, Champ."; Write-ActivityLog "CHAMP AI Control Center exited"; Write-Host "Exiting..." }
         default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
     }
-} while ($choice -ne "21")
+} while ($choice -ne "22")

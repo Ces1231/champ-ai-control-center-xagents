@@ -96,7 +96,8 @@ Or double-click `Launch-CHAMP-AI-Control-Center.bat`.
 | 18 | View Activity Log |
 | 19 | **AI Development Tools** |
 | 20 | **DevOps Control Panel** |
-| 21 | Exit |
+| 21 | **Intelligence Hub** |
+| 22 | Exit |
 
 ## AI Development Tools (option 19)
 
@@ -219,6 +220,31 @@ A full DevOps integration layer inside CHAMP AI. Each tool gets its own submenu 
 ### DevOps Config
 
 All DevOps settings are stored in `.devops-config.json` in the script folder. Secrets (Proxmox token secret, API keys) are read from `.env`. Run the **Configure** option inside each tool's submenu to set up connection details.
+
+---
+
+## Intelligence Hub (option 21)
+
+New capability layer exposing 10 advanced tools accessible from a single submenu.
+
+| # | Tool | Description |
+| --- | --- | --- |
+| 1 | Conversation History | Persistent per-agent memory — each agent remembers your last 100 exchanges across sessions, stored in `CHAMP-History\` |
+| 2 | Cloud API Fallback | Route any prompt to OpenAI (gpt-4o-mini, gpt-4o) or Claude (Haiku, Sonnet) using keys from `.env`; includes side-by-side local vs cloud comparison |
+| 3 | Clipboard AI | Grab whatever is on the clipboard and fire it at any agent instantly, with an optional instruction prefix |
+| 4 | WSL Manager | List distros, launch a shell, run commands, start/stop/set-default distros, check Linux system info, Forge bash script generator |
+| 5 | Live Dashboard | Auto-refreshing war-room view — CPU, RAM, disk, Ollama status, Docker, loaded models, port health, recent activity log |
+| 6 | Windows Event Log Watcher | Browse System / Application / Security event logs; Cyclops AI analysis of recent errors; keyword search |
+| 7 | Network Scanner | Ping, traceroute, DNS lookup, common port scan, /24 ping sweep, local network info, Cyclops analysis of results |
+| 8 | File & Code Analyzer | Drop any file path — Forge explains and reviews code, Cyclops security-audits it, Nightcrawler summarises logs, Forge generates unit tests, Professor X analyses folder architecture |
+| 9 | Git Tools | `git status/log/diff/stash/branch` in any local repo; Forge generates commit messages and reviews diffs; Cyclops security-scans uncommitted changes |
+| 10 | LM Studio | Connect to LM Studio's OpenAI-compatible API on port 1234; list models, chat, code tasks, security analysis, side-by-side vs Forge |
+
+### New Runtime Files
+
+| File / Folder | Purpose |
+| --- | --- |
+| `CHAMP-History\<agent>.json` | Per-agent conversation history (up to 100 exchanges) |
 
 ---
 
