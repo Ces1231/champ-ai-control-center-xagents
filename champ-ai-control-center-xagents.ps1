@@ -5090,6 +5090,155 @@ function Stop-WakeWordListener {
     Pause-Menu
 }
 
+# -----------------------------
+# Voice Command Dispatcher
+# After wake word, listens for a command and routes to the right action
+# -----------------------------
+
+# Full command routing table — maps spoken keywords to actions
+$Global:VoiceCommands = @(
+    # System / Services
+    @{ Keywords=@("system status","check status","cerebro status","what is the status")       ; Action="Show-SystemStatus" }
+    @{ Keywords=@("start ollama","ollama start","launch ollama","run ollama")                  ; Action="Start-Ollama" }
+    @{ Keywords=@("stop ollama","ollama stop","shut down ollama","kill ollama")                 ; Action="Stop-Ollama" }
+    @{ Keywords=@("start webui","start web ui","open webui","launch webui","start open webui") ; Action="Start-OpenWebUI" }
+    @{ Keywords=@("stop webui","stop web ui","stop open webui")                                ; Action="Stop-OpenWebUI" }
+    @{ Keywords=@("restart webui","restart web ui","reboot webui")                             ; Action="Restart-OpenWebUI" }
+    @{ Keywords=@("open dashboard","open web dashboard","webui dashboard","browser")           ; Action="Open-WebDashboard" }
+    @{ Keywords=@("show docker","docker containers","list containers","docker status")         ; Action="Show-DockerContainers" }
+    @{ Keywords=@("list models","show models","what models","ollama models")                   ; Action="List-OllamaModels" }
+    @{ Keywords=@("activity log","show log","open log","view log")                             ; Action="Show-ActivityLog" }
+    @{ Keywords=@("live dashboard","dashboard","war room")                                     ; Action="Show-LiveDashboard" }
+    @{ Keywords=@("open vs code","open vscode","launch vs code","open code","visual studio")   ; Action="Open-VSCodeProject" }
+    @{ Keywords=@("clipboard","send clipboard","clipboard ai")                                 ; Action="Invoke-ClipboardAI" }
+    @{ Keywords=@("wolverine","health scan","health check","recover services","watchdog")      ; Action="Wolverine-HealthScan" }
+    @{ Keywords=@("pull all models","download all models","update all models")                 ; Action="Pull-AgentModels" }
+    @{ Keywords=@("register agents","register models","create named models","webui agents")    ; Action="Register-AgentModels" }
+    @{ Keywords=@("network scan","scan network","port scan")                                   ; Action="NetworkScanner-Menu" }
+    @{ Keywords=@("event log","windows errors","system errors","check errors")                 ; Action="EventLog-Menu" }
+    @{ Keywords=@("git status","git tools","git")                                              ; Action="GitTools-Menu" }
+    @{ Keywords=@("devops","dev ops control","proxmox","terraform","ansible")                  ; Action="DevOps-Menu" }
+    @{ Keywords=@("ai tools","dev tools","development tools")                                  ; Action="AIDevTools-Menu" }
+    @{ Keywords=@("agent map","show agents","list agents","show roster")                       ; Action="Show-AgentMap" }
+    @{ Keywords=@("backup","back up","restore")                                                ; Action="# Backup (no direct function — go to AI tools)" }
+)
+
+# Agent launch keywords — "launch forge", "activate beast", "use cyclops" etc.
+$Global:VoiceAgentKeywords = @("launch","activate","start agent","use","run","open","wake up","call","bring up","switch to","talk to","chat with","speak to")
+
+function Invoke-VoiceCommand {
+    param([string]$CommandText)
+
+    $cmd = $CommandText.ToLower().Trim()
+    Write-Host "  [Command: '$cmd']" -ForegroundColor DarkGray
+
+    # --- Check for agent launch commands ---
+    $agentMatch = $null
+    foreach ($kw in $Global:VoiceAgentKeywords) {
+        if ($cmd -like "*$kw*") {
+            # Try to match an agent name in the remaining text
+            foreach ($agentName in $Agents.Keys) {
+                $shortName = $agentName.ToLower().Replace("-"," ")
+                if ($cmd -like "*$shortName*" -or $cmd -like "*$($agentName.ToLower())*") {
+                    $agentMatch = $agentName
+                    break
+                }
+            }
+        }
+        if ($agentMatch) { break }
+    }
+
+    # Also match agent names directly without a verb — "forge", "professor x", etc.
+    if (-not $agentMatch) {
+        foreach ($agentName in $Agents.Keys) {
+            $shortName = $agentName.ToLower().Replace("-"," ")
+            if ($cmd -eq $shortName -or $cmd -eq $agentName.ToLower()) {
+                $agentMatch = $agentName
+                break
+            }
+        }
+    }
+
+    if ($agentMatch) {
+        # "chat with" or "talk to" → conversation mode; otherwise → one-shot activation
+        $chatVerbs = @("chat with","talk to","speak to","conversation with","speak with")
+        $isChatMode = $false
+        foreach ($v in $chatVerbs) { if ($cmd -like "*$v*") { $isChatMode = $true; break } }
+
+        if ($isChatMode) {
+            Speak-CHAMP "Opening conversation with $agentMatch, Carnell."
+            CEREBRO-ChatMode -AgentName $agentMatch -VoiceInput $true
+        } else {
+            Speak-CHAMP "Launching $agentMatch, Carnell."
+            Write-ActivityLog "Voice command: launch $agentMatch"
+            if ($agentMatch -eq "Scout" -or $agentMatch -eq "Rogue" -or $agentMatch -eq "Longshot") {
+                Activate-Scout
+            } else {
+                Activate-Agent $agentMatch
+            }
+        }
+        return
+    }
+
+    # --- Check action commands ---
+    $matched = $false
+    foreach ($entry in $Global:VoiceCommands) {
+        foreach ($kw in $entry.Keywords) {
+            if ($cmd -like "*$kw*") {
+                $action = $entry.Action
+                Write-ActivityLog "Voice command: $action"
+                switch ($action) {
+                    "Show-SystemStatus"   { Speak-CHAMP "Checking system status.";             Show-SystemStatus }
+                    "Start-Ollama"        { Speak-CHAMP "Starting Ollama.";                    Start-Ollama }
+                    "Stop-Ollama"         { Speak-CHAMP "Stopping Ollama.";                    Stop-Ollama }
+                    "Start-OpenWebUI"     { Speak-CHAMP "Starting Open WebUI.";                Start-OpenWebUI }
+                    "Stop-OpenWebUI"      { Speak-CHAMP "Stopping Open WebUI.";                Stop-OpenWebUI }
+                    "Restart-OpenWebUI"   { Speak-CHAMP "Restarting Open WebUI.";              Restart-OpenWebUI }
+                    "Open-WebDashboard"   { Speak-CHAMP "Opening Open WebUI dashboard.";       Open-WebDashboard }
+                    "Show-DockerContainers"{ Speak-CHAMP "Showing Docker containers.";         Show-DockerContainers }
+                    "List-OllamaModels"   { Speak-CHAMP "Listing Ollama models.";              List-OllamaModels }
+                    "Show-ActivityLog"    { Speak-CHAMP "Opening activity log.";               Show-ActivityLog }
+                    "Show-LiveDashboard"  { Speak-CHAMP "Launching live dashboard.";           Show-LiveDashboard }
+                    "Open-VSCodeProject"  { Speak-CHAMP "Opening VS Code.";                    Open-VSCodeProject }
+                    "Invoke-ClipboardAI"  { Speak-CHAMP "Sending clipboard to an agent.";      Invoke-ClipboardAI }
+                    "Wolverine-HealthScan"{ Speak-CHAMP "Running Wolverine health scan.";      Wolverine-HealthScan }
+                    "Pull-AgentModels"    { Speak-CHAMP "Pulling all agent models.";           Pull-AgentModels }
+                    "Register-AgentModels"{ Speak-CHAMP "Registering agents in Open WebUI.";   Register-AgentModels }
+                    "NetworkScanner-Menu" { Speak-CHAMP "Opening network scanner.";            NetworkScanner-Menu }
+                    "EventLog-Menu"       { Speak-CHAMP "Opening Windows event log watcher.";  EventLog-Menu }
+                    "GitTools-Menu"       { Speak-CHAMP "Opening git tools.";                  GitTools-Menu }
+                    "DevOps-Menu"         { Speak-CHAMP "Opening DevOps control panel.";       DevOps-Menu }
+                    "AIDevTools-Menu"     { Speak-CHAMP "Opening AI development tools.";       AIDevTools-Menu }
+                    "Show-AgentMap"       { Speak-CHAMP "Displaying agent roster.";            Show-AgentMap }
+                    default {
+                        Speak-CHAMP "I recognized the command but could not execute it directly. Please use the menu."
+                    }
+                }
+                $matched = $true
+                break
+            }
+        }
+        if ($matched) { break }
+    }
+
+    # --- Fallback: treat as a question for Professor-X ---
+    if (-not $matched) {
+        Speak-CHAMP "I will ask Professor X."
+        $response = Invoke-OllamaWithSystem `
+            -Model $Agents["Professor-X"].Model `
+            -SystemPrompt $AgentSystemPrompts["Professor-X"] `
+            -UserPrompt $CommandText
+        if ($response) {
+            $speakText = if ($response.Length -gt 400) { $response.Substring(0,400) + "... full answer on screen." } else { $response }
+            Write-Host "`nProfessor-X > " -ForegroundColor Yellow -NoNewline
+            Write-Host $response -ForegroundColor White
+            Speak-CHAMP $speakText
+            Add-AgentHistory -Agent "Professor-X" -Role "user"      -Content $CommandText
+            Add-AgentHistory -Agent "Professor-X" -Role "assistant" -Content $response
+        }
+    }
+}
+
 function Test-WakeWordTriggered {
     # Called each time the main menu loop runs — checks for trigger file
     if (-not $Global:WakeWordActive) { return }
@@ -5099,9 +5248,24 @@ function Test-WakeWordTriggered {
         if ($phrase) {
             [console]::beep(900,100); [console]::beep(1100,150)
             Write-Host ""
-            Write-Host "  [Wake word detected: '$($phrase.Trim())']" -ForegroundColor Green
-            Speak-CHAMP "Yes, Carnell. I am listening."
-            CEREBRO-ChatMode -AgentName "Professor-X" -VoiceInput $true
+            Write-Host "  [Wake word detected]" -ForegroundColor Green
+            Speak-CHAMP "Yes, Carnell. What would you like me to do?"
+
+            # Listen for the actual command
+            $command = Invoke-SpeechRecognition
+            if ($command) {
+                Write-Host "  [You said: '$command']" -ForegroundColor Cyan
+                Invoke-VoiceCommand -CommandText $command
+            } else {
+                # No voice heard — drop into text command entry
+                Write-Host ""
+                $command = Read-Host "  Command (or Enter for voice chat)"
+                if ([string]::IsNullOrWhiteSpace($command)) {
+                    CEREBRO-ChatMode -AgentName "Professor-X" -VoiceInput $true
+                } else {
+                    Invoke-VoiceCommand -CommandText $command
+                }
+            }
         }
     }
 }
