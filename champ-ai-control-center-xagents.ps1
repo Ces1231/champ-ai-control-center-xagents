@@ -6198,6 +6198,548 @@ function Wolverine-Menu {
 }
 
 # ============================================================
+# AGENT OPERATIONS, CHAMP-QN, WHISPER, THREAT INTEL, ZERO TRUST, AUDIT
+# ============================================================
+
+$Global:CHAMPMode   = "Default"
+$PerformanceFile    = "$PSScriptRoot\CHAMP-Memory\agent-metrics.json"
+$SchedulerFile      = "$PSScriptRoot\CHAMP-Memory\scheduled-tasks.json"
+$AuditFile          = "$PSScriptRoot\CHAMP-Memory\audit-trail.json"
+$CustomAgentsFile   = "$PSScriptRoot\CHAMP-Memory\custom-agents.json"
+$CHAMPQNConfigFile  = "$PSScriptRoot\.champqn-config.json"
+
+# -------------------------------------------------------
+# Whisper Local STT
+# -------------------------------------------------------
+function Test-WhisperAvailable {
+    try { $r = python -c "import whisper" 2>&1; return ($r -notmatch "Error|No module") } catch { return $false }
+}
+
+function Install-WhisperSTT {
+    Show-Header
+    if (-not (Test-CommandExists "python")) { Write-Err "Python not found. Install Python 3.9+ from python.org."; Pause-Menu; return }
+    Write-Info "Installing OpenAI Whisper..."
+    pip install openai-whisper sounddevice numpy 2>&1 | Write-Host
+    $helperPath = "$PSScriptRoot\whisper-listen.py"
+    Set-Content $helperPath -Encoding UTF8 -Value @'
+import sys, whisper, sounddevice as sd, numpy as np
+duration   = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+model_size = sys.argv[2]      if len(sys.argv) > 2 else "base"
+model  = whisper.load_model(model_size)
+audio  = sd.rec(int(duration * 16000), samplerate=16000, channels=1, dtype="float32")
+sd.wait()
+result = model.transcribe(audio.flatten(), fp16=False)
+print(result["text"].strip())
+'@
+    Write-OK "Whisper installed. Script: $helperPath"; Pause-Menu
+}
+
+function Invoke-WhisperListen {
+    param([int]$DurationSeconds = 5, [string]$ModelSize = "base")
+    if (-not (Test-WhisperAvailable)) { return (Invoke-SpeechRecognition) }
+    $helperPath = "$PSScriptRoot\whisper-listen.py"
+    if (-not (Test-Path $helperPath)) { return (Invoke-SpeechRecognition) }
+    Write-Info "Listening $DurationSeconds seconds (Whisper)..."
+    try { $r = python $helperPath $DurationSeconds $ModelSize 2>$null; if ($r) { return $r.Trim() } } catch {}
+    return (Invoke-SpeechRecognition)
+}
+
+# -------------------------------------------------------
+# Multi-Agent Collaboration
+# -------------------------------------------------------
+function Invoke-AgentCouncil {
+    Show-Header
+    Write-Info "Multi-Agent Council"; Write-Info "-------------------"
+    $task = Read-Host "Task or question for the council"
+    $councilAgents = @("Professor-X","Forge","Cyclops","Beast")
+    $responses = @{}
+    Write-Info "Round 1 - Independent responses..."
+    foreach ($agent in $councilAgents) {
+        Write-Host "  $agent thinking..." -ForegroundColor DarkCyan
+        $prompt = "$($AgentSystemPrompts[$agent])`n`nTask: $task`n`nProvide your expert perspective and recommendation."
+        $body = @{ model=$Agents[$agent].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+        try {
+            $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 180
+            $responses[$agent] = $resp.response; Write-Host "  $agent done." -ForegroundColor Green
+        } catch { $responses[$agent] = "Error: $_"; Write-Warn "$agent failed." }
+    }
+    Write-Info "Round 2 - Professor-X synthesizing..."
+    $allResponses = ""; foreach ($a in $councilAgents) { $allResponses += "=== $a ===`n$($responses[$a])`n`n" }
+    $synthPrompt = "$($AgentSystemPrompts["Professor-X"])`n`nYou have council perspectives on: $task`n`n$allResponses`n`nSynthesize into one comprehensive actionable recommendation."
+    $synthBody = @{ model=$Agents["Professor-X"].Model; prompt=$synthPrompt; stream=$false } | ConvertTo-Json
+    try {
+        $synthResp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $synthBody -ContentType "application/json" -TimeoutSec 180
+        Write-Host ""; Write-Host "COUNCIL SYNTHESIS" -ForegroundColor Yellow; Write-Host "=================" -ForegroundColor Yellow
+        Write-Host $synthResp.response -ForegroundColor Cyan
+        $sessDir = "$PSScriptRoot\CHAMP-Sessions"
+        if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory -Path $sessDir | Out-Null }
+        $outFile = "$sessDir\Council-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+        $md = "# Agent Council`n`n**Task:** $task`n`n**Date:** $(Get-Date)`n`n"
+        foreach ($a in $councilAgents) { $md += "## $a`n`n$($responses[$a])`n`n---`n`n" }
+        $md += "## Synthesis`n`n$($synthResp.response)"
+        Set-Content $outFile -Value $md -Encoding UTF8
+        Write-OK "Saved to $outFile"; Speak-CHAMP "The council has reached a consensus."
+    } catch { Write-Err "Synthesis failed: $_" }
+    Pause-Menu
+}
+
+function Invoke-AgentChain {
+    Show-Header; Write-Info "Agent Chain Pipeline"; Write-Info "--------------------"
+    $task = Read-Host "Initial task"
+    $availableAgents = $Agents.Keys | Sort-Object
+    $chain = @()
+    Write-Info "Build chain (blank to start):"
+    for ($i = 1; $i -le 5; $i++) {
+        for ($j = 0; $j -lt $availableAgents.Count; $j++) { Write-Host "  $($j+1). $($availableAgents[$j])" }
+        $sel = Read-Host "Agent $i (or blank to start)"
+        if ([string]::IsNullOrWhiteSpace($sel)) { break }
+        if ($sel -match "^\d+$") { $idx=[int]$sel-1; if ($idx -ge 0 -and $idx -lt $availableAgents.Count) { $chain += $availableAgents[$idx] } }
+    }
+    if ($chain.Count -eq 0) { Write-Warn "No agents selected."; Pause-Menu; return }
+    Write-Info "Chain: $($chain -join ' -> ')"; $currentInput = $task; $chainLog = @()
+    foreach ($agent in $chain) {
+        Write-Host ""; Write-Host "[$agent] Processing..." -ForegroundColor Cyan
+        $prompt = "$($AgentSystemPrompts[$agent])`n`nChain step $($chain.IndexOf($agent)+1). Previous output:`n$currentInput`n`nProcess and improve."
+        $body = @{ model=$Agents[$agent].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+        try {
+            $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 180
+            $currentInput = $resp.response; $chainLog += @{ Agent=$agent; Output=$resp.response }
+            Write-Host $resp.response -ForegroundColor White; Write-Host "---" -ForegroundColor DarkGray
+        } catch { Write-Warn "$agent failed: $_" }
+    }
+    $sessDir = "$PSScriptRoot\CHAMP-Sessions"
+    if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory -Path $sessDir | Out-Null }
+    $md = "# Agent Chain: $($chain -join ' -> ')`n`n**Task:** $task`n`n**Date:** $(Get-Date)`n`n"
+    foreach ($entry in $chainLog) { $md += "## $($entry.Agent)`n`n$($entry.Output)`n`n---`n`n" }
+    Set-Content "$sessDir\Chain-$(Get-Date -Format 'yyyyMMdd-HHmmss').md" -Value $md -Encoding UTF8
+    Write-OK "Chain saved."; Speak-CHAMP "Agent chain complete."; Pause-Menu
+}
+
+# -------------------------------------------------------
+# Agent Performance Tracker
+# -------------------------------------------------------
+function Record-AgentMetric {
+    param([string]$AgentName, [double]$ResponseTimeSeconds, [string]$TaskType = "general")
+    try {
+        Initialize-MemoryLayer
+        $metrics = if (Test-Path $PerformanceFile) { Get-Content $PerformanceFile -Raw | ConvertFrom-Json } else { @() }
+        $metrics += @{ Agent=$AgentName; Time=$ResponseTimeSeconds; TaskType=$TaskType; Date=(Get-Date -Format "yyyy-MM-dd HH:mm") }
+        $metrics | ConvertTo-Json -Depth 5 | Set-Content $PerformanceFile -Encoding UTF8
+    } catch {}
+}
+
+function Show-AgentPerformance {
+    Show-Header; Initialize-MemoryLayer
+    if (-not (Test-Path $PerformanceFile)) { Write-Warn "No metrics yet."; Pause-Menu; return }
+    $metrics = Get-Content $PerformanceFile -Raw | ConvertFrom-Json
+    if ($metrics.Count -eq 0) { Write-Warn "No metrics recorded."; Pause-Menu; return }
+    Write-Info "Agent Performance Report"; Write-Info "------------------------"
+    $grouped = $metrics | Group-Object Agent
+    foreach ($g in $grouped | Sort-Object Name) {
+        $avg = [Math]::Round(($g.Group | Measure-Object Time -Average).Average, 2)
+        $min = [Math]::Round(($g.Group | Measure-Object Time -Minimum).Minimum, 2)
+        $max = [Math]::Round(($g.Group | Measure-Object Time -Maximum).Maximum, 2)
+        Write-Host ""; Write-Host "  $($g.Name)" -ForegroundColor Yellow
+        Write-Host "  Queries: $($g.Count)  Avg: ${avg}s  Min: ${min}s  Max: ${max}s"
+    }
+    $fastest = ($grouped | Sort-Object { ($_.Group | Measure-Object Time -Average).Average } | Select-Object -First 1).Name
+    Write-Host ""; Write-Host "  Fastest: $fastest" -ForegroundColor Green; Pause-Menu
+}
+
+function Reset-AgentMetrics {
+    Show-Header
+    if ((Read-Host "Reset all agent metrics? (YES)") -eq "YES") {
+        Set-Content $PerformanceFile -Value "[]" -Encoding UTF8; Write-OK "Metrics reset."
+    }
+    Pause-Menu
+}
+
+# -------------------------------------------------------
+# Scheduled Autonomous Tasks
+# -------------------------------------------------------
+function Initialize-Scheduler {
+    Initialize-MemoryLayer
+    if (-not (Test-Path $SchedulerFile)) { Set-Content $SchedulerFile -Value "[]" -Encoding UTF8 }
+}
+
+function New-ScheduledAgentTask {
+    Show-Header; Initialize-Scheduler
+    $name     = Read-Host "Task name"
+    $agent    = Read-Host "Agent (e.g. Cyclops, Professor-X)"
+    if (-not $Agents.ContainsKey($agent)) { Write-Err "Unknown agent '$agent'."; Pause-Menu; return }
+    $prompt   = Read-Host "Prompt for the agent"
+    Write-Host "1. Hourly  2. Daily  3. Weekly  4. On Launch"
+    $interval = Read-Host "Interval"
+    $intervalName = switch ($interval) { "1"{"Hourly"} "2"{"Daily"} "3"{"Weekly"} default{"OnLaunch"} }
+    $tasks = Get-Content $SchedulerFile -Raw | ConvertFrom-Json
+    $tasks += @{ Id=[guid]::NewGuid().ToString(); Name=$name; Agent=$agent; Prompt=$prompt; Interval=$intervalName; Created=(Get-Date -Format "yyyy-MM-dd HH:mm"); LastRun=$null; Enabled=$true }
+    $tasks | ConvertTo-Json -Depth 10 | Set-Content $SchedulerFile -Encoding UTF8
+    Write-OK "Scheduled task '$name' created ($intervalName)."; Pause-Menu
+}
+
+function List-ScheduledTasks {
+    Show-Header; Initialize-Scheduler
+    $tasks = Get-Content $SchedulerFile -Raw | ConvertFrom-Json
+    if (-not $tasks -or $tasks.Count -eq 0) { Write-Warn "No scheduled tasks."; Pause-Menu; return }
+    Write-Info "Scheduled Tasks"; Write-Info "---------------"
+    foreach ($t in $tasks) {
+        $status = if ($t.Enabled) { "ENABLED" } else { "DISABLED" }
+        Write-Host ""; Write-Host "  $($t.Name) [$status]" -ForegroundColor Yellow
+        Write-Host "  Agent: $($t.Agent)  Interval: $($t.Interval)"
+        Write-Host "  Last Run: $(if($t.LastRun){$t.LastRun}else{'Never'})"
+    }
+    Pause-Menu
+}
+
+function Run-DueScheduledTasks {
+    Initialize-Scheduler
+    $tasks = Get-Content $SchedulerFile -Raw | ConvertFrom-Json
+    $now = Get-Date; $modified = $false
+    foreach ($task in $tasks) {
+        if (-not $task.Enabled) { continue }
+        $isDue = if (-not $task.LastRun) { $task.Interval -eq "OnLaunch" }
+                 else {
+                     $lastRun = [datetime]::Parse($task.LastRun)
+                     switch ($task.Interval) {
+                         "Hourly"  { ($now-$lastRun).TotalHours -ge 1 }
+                         "Daily"   { ($now-$lastRun).TotalHours -ge 24 }
+                         "Weekly"  { ($now-$lastRun).TotalDays  -ge 7 }
+                         default   { $false }
+                     }
+                 }
+        if ($isDue) {
+            Write-Info "Running scheduled task: $($task.Name)..."
+            $body = @{ model=$Agents[$task.Agent].Model; prompt=$task.Prompt; stream=$false } | ConvertTo-Json
+            try {
+                $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 180
+                $sessDir = "$PSScriptRoot\CHAMP-Sessions"
+                if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory -Path $sessDir | Out-Null }
+                $fname = "$sessDir\Sched-$($task.Name -replace '\s','-')-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+                Set-Content $fname -Value "# Scheduled: $($task.Name)`n`n**Agent:** $($task.Agent)`n`n**Date:** $(Get-Date)`n`n$($resp.response)" -Encoding UTF8
+                Write-OK "Task '$($task.Name)' complete."; Speak-CHAMP "Scheduled task $($task.Name) complete."
+            } catch { Write-Warn "Task '$($task.Name)' failed: $_" }
+            $task.LastRun = (Get-Date -Format "yyyy-MM-dd HH:mm"); $modified = $true
+        }
+    }
+    if ($modified) { $tasks | ConvertTo-Json -Depth 10 | Set-Content $SchedulerFile -Encoding UTF8 }
+}
+
+function Toggle-ScheduledTask {
+    Show-Header; Initialize-Scheduler
+    $tasks = Get-Content $SchedulerFile -Raw | ConvertFrom-Json
+    if (-not $tasks -or $tasks.Count -eq 0) { Write-Warn "No tasks."; Pause-Menu; return }
+    for ($i=0;$i -lt $tasks.Count;$i++) { Write-Host "$($i+1). $($tasks[$i].Name) [$(if($tasks[$i].Enabled){'ON'}else{'OFF'})]" }
+    $sel = [int](Read-Host "Select task to toggle") - 1
+    if ($sel -ge 0 -and $sel -lt $tasks.Count) {
+        $tasks[$sel].Enabled = -not $tasks[$sel].Enabled
+        $tasks | ConvertTo-Json -Depth 10 | Set-Content $SchedulerFile -Encoding UTF8
+        Write-OK "Task '$($tasks[$sel].Name)' $(if($tasks[$sel].Enabled){'enabled'}else{'disabled'})."
+    }
+    Pause-Menu
+}
+
+function Show-SchedulerMenu {
+    Show-Header; Write-Info "Scheduled Autonomous Tasks"; Write-Info "--------------------------"
+    Write-Host "1. New Scheduled Task"; Write-Host "2. List Tasks"
+    Write-Host "3. Enable / Disable Task"; Write-Host "4. Run All Due Tasks Now"; Write-Host "5. Back"
+}
+
+function Scheduler-Menu {
+    do {
+        Show-SchedulerMenu; $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { New-ScheduledAgentTask } "2" { List-ScheduledTasks }
+            "3" { Toggle-ScheduledTask } "4" { Run-DueScheduledTasks; Pause-Menu } "5" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "5")
+}
+
+# -------------------------------------------------------
+# Natural Language Infrastructure
+# -------------------------------------------------------
+function Invoke-NLInfrastructure {
+    Show-Header; Write-Info "Natural Language Infrastructure"; Write-Info "--------------------------------"
+    Write-Host "  Examples: 'Build a 3-node Redis cluster with monitoring'"
+    Write-Host "            'Set up zero-trust Nginx reverse proxy'"
+    Write-Host ""
+    $intent = Read-Host "Describe the infrastructure you need"
+    Write-Info "Professor-X designing architecture..."
+    $body1 = @{ model=$Agents["Professor-X"].Model; prompt="$($AgentSystemPrompts["Professor-X"])`n`nDesign infrastructure architecture for: $intent`nList components, topology, security, and resource requirements."; stream=$false } | ConvertTo-Json
+    $design = ""
+    try { $r1=$( Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body1 -ContentType "application/json" -TimeoutSec 180); $design=$r1.response; Write-Host $design -ForegroundColor Yellow } catch { Write-Err "Design failed."; Pause-Menu; return }
+    Write-Info "Forge generating Terraform..."
+    $body2 = @{ model=$Agents["Forge"].Model; prompt="$($AgentSystemPrompts["Forge"])`n`nGenerate complete Terraform HCL for: $intent`nContext:`n$design`nOutput ONLY Terraform code."; stream=$false } | ConvertTo-Json
+    $terraform = ""
+    try { $r2=(Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body2 -ContentType "application/json" -TimeoutSec 180); $terraform=$r2.response } catch { Write-Warn "Terraform failed." }
+    Write-Info "Forge generating Ansible playbook..."
+    $body3 = @{ model=$Agents["Forge"].Model; prompt="$($AgentSystemPrompts["Forge"])`n`nGenerate complete Ansible playbook for: $intent`nOutput ONLY YAML."; stream=$false } | ConvertTo-Json
+    $ansible = ""
+    try { $r3=(Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body3 -ContentType "application/json" -TimeoutSec 180); $ansible=$r3.response } catch { Write-Warn "Ansible failed." }
+    $infraDir = "$PSScriptRoot\CHAMP-Deploy\infra-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    New-Item -ItemType Directory -Path $infraDir -Force | Out-Null
+    Set-Content "$infraDir\architecture.md" -Value "# Architecture`n`n$design" -Encoding UTF8
+    if ($terraform) { Set-Content "$infraDir\main.tf"       -Value $terraform -Encoding UTF8 }
+    if ($ansible)   { Set-Content "$infraDir\playbook.yml"  -Value $ansible   -Encoding UTF8 }
+    Write-OK "Infrastructure files saved to $infraDir"; Speak-CHAMP "Infrastructure design complete."; Pause-Menu
+}
+
+# -------------------------------------------------------
+# Custom Agent Builder
+# -------------------------------------------------------
+function Initialize-CustomAgents {
+    Initialize-MemoryLayer
+    if (-not (Test-Path $CustomAgentsFile)) { Set-Content $CustomAgentsFile -Value "{}" -Encoding UTF8 }
+}
+
+function New-CustomAgent {
+    Show-Header; Initialize-CustomAgents
+    $name    = (Read-Host "Agent name (no spaces)") -replace '\s','-'
+    $model   = Read-Host "Base model (e.g. llama3.1:8b)"
+    $role    = Read-Host "Role description"
+    Write-Host "Enter system prompt (type END on a new line to finish):"
+    $lines   = @(); do { $line=Read-Host; if($line -ne "END"){$lines+=$line} } while ($line -ne "END")
+    $sysPrompt = $lines -join "`n"
+    $keywords  = Read-Host "Keywords for routing (comma-separated)"
+    $agentObj  = @{ Model=$model; Role=$role; Keywords=($keywords -split ",").Trim(); Custom=$true; Created=(Get-Date -Format "yyyy-MM-dd HH:mm") }
+    $customAgents = Get-Content $CustomAgentsFile -Raw | ConvertFrom-Json
+    $customAgents | Add-Member -NotePropertyName $name -NotePropertyValue $agentObj -Force
+    $customAgents | ConvertTo-Json -Depth 10 | Set-Content $CustomAgentsFile -Encoding UTF8
+    $Agents[$name] = $agentObj; $AgentSystemPrompts[$name] = $sysPrompt
+    if ((Read-Host "Register in Ollama? (Y/N)") -match "^[Yy]") {
+        $mfPath = "$PSScriptRoot\Modelfile-$name"
+        Set-Content $mfPath -Value "FROM $model`nSYSTEM `"$sysPrompt`"" -Encoding UTF8
+        ollama create $name -f $mfPath 2>&1; Write-OK "Registered in Ollama as '$name'."
+    }
+    Write-OK "Custom agent '$name' created."; Pause-Menu
+}
+
+function List-CustomAgents {
+    Show-Header; Initialize-CustomAgents
+    $customAgents = Get-Content $CustomAgentsFile -Raw | ConvertFrom-Json
+    $props = $customAgents.PSObject.Properties
+    if (-not $props -or ($props | Measure-Object).Count -eq 0) { Write-Warn "No custom agents yet."; Pause-Menu; return }
+    Write-Info "Custom Agents"; Write-Info "-------------"
+    foreach ($p in $props) { Write-Host ""; Write-Host "  $($p.Name)" -ForegroundColor Yellow; Write-Host "  Model: $($p.Value.Model)  Role: $($p.Value.Role)" }
+    Pause-Menu
+}
+
+function Remove-CustomAgent {
+    Show-Header; Initialize-CustomAgents
+    $customAgents = Get-Content $CustomAgentsFile -Raw | ConvertFrom-Json
+    $names = $customAgents.PSObject.Properties.Name
+    if (-not $names -or $names.Count -eq 0) { Write-Warn "No custom agents."; Pause-Menu; return }
+    for ($i=0;$i -lt $names.Count;$i++) { Write-Host "$($i+1). $($names[$i])" }
+    $sel = [int](Read-Host "Select to remove") - 1
+    if ($sel -ge 0 -and $sel -lt $names.Count) {
+        $aName = $names[$sel]; $customAgents.PSObject.Properties.Remove($aName)
+        $customAgents | ConvertTo-Json -Depth 10 | Set-Content $CustomAgentsFile -Encoding UTF8
+        if ($Agents.ContainsKey($aName)) { $Agents.Remove($aName) }
+        Write-OK "Removed '$aName'."
+    }
+    Pause-Menu
+}
+
+function Show-AgentBuilderMenu {
+    Show-Header; Write-Info "Custom Agent Builder"; Write-Info "--------------------"
+    Write-Host "1. Create New Agent"; Write-Host "2. List Custom Agents"; Write-Host "3. Remove Agent"; Write-Host "4. Back"
+}
+
+function AgentBuilder-Menu {
+    do {
+        Show-AgentBuilderMenu; $choice = Read-Host "Select"
+        switch ($choice) { "1"{New-CustomAgent} "2"{List-CustomAgents} "3"{Remove-CustomAgent} "4"{return} default{Play-ErrorSound;Pause-Menu} }
+    } while ($choice -ne "4")
+}
+
+# -------------------------------------------------------
+# Full Audit Trail
+# -------------------------------------------------------
+function Initialize-AuditTrail {
+    Initialize-MemoryLayer
+    if (-not (Test-Path $AuditFile)) { Set-Content $AuditFile -Value "[]" -Encoding UTF8 }
+}
+
+function Write-AuditEntry {
+    param([string]$Action, [string]$Agent = "", [string]$Details = "")
+    try {
+        Initialize-AuditTrail
+        $entries = Get-Content $AuditFile -Raw | ConvertFrom-Json
+        $entries += @{ Timestamp=(Get-Date -Format "yyyy-MM-dd HH:mm:ss"); User="Carnell"; Action=$Action; Agent=$Agent; Details=$Details }
+        if ($entries.Count -gt 10000) { $entries = $entries | Select-Object -Last 10000 }
+        $entries | ConvertTo-Json -Depth 5 | Set-Content $AuditFile -Encoding UTF8
+    } catch {}
+}
+
+function Search-AuditTrail {
+    Show-Header; Initialize-AuditTrail; Write-Info "Audit Trail"; Write-Info "-----------"
+    Write-Host "1. Last 50 entries"; Write-Host "2. Keyword search"; Write-Host "3. Filter by agent"; Write-Host "4. Export CSV"; Write-Host "5. Back"
+    $choice = Read-Host "Select"
+    $entries = Get-Content $AuditFile -Raw | ConvertFrom-Json
+    switch ($choice) {
+        "1" { $entries | Select-Object -Last 50 | ForEach-Object { Write-Host "$($_.Timestamp)  [$($_.Agent)]  $($_.Action)" -ForegroundColor Cyan } }
+        "2" { $kw=(Read-Host "Keyword"); $entries | Where-Object { $_.Action -match $kw -or $_.Details -match $kw -or $_.Agent -match $kw } | Select-Object -Last 100 | ForEach-Object { Write-Host "$($_.Timestamp)  [$($_.Agent)]  $($_.Action)" -ForegroundColor Cyan } }
+        "3" { $ag=(Read-Host "Agent name"); $entries | Where-Object { $_.Agent -eq $ag } | Select-Object -Last 100 | ForEach-Object { Write-Host "$($_.Timestamp)  $($_.Action)" -ForegroundColor Cyan } }
+        "4" { $csv="$PSScriptRoot\CHAMP-Sessions\audit-$(Get-Date -Format 'yyyyMMdd-HHmmss').csv"; $entries | Export-Csv $csv -NoTypeInformation -Encoding UTF8; Write-OK "Exported to $csv" }
+    }
+    Pause-Menu
+}
+
+# -------------------------------------------------------
+# Zero Trust Policy Generator
+# -------------------------------------------------------
+function Generate-ZeroTrustPolicy {
+    Show-Header; Write-Info "Zero Trust Policy Generator"; Write-Info "---------------------------"
+    $env = Read-Host "Describe your environment (e.g. '50-node hybrid cloud, Windows + Linux')"
+    Write-Info "Cyclops generating Zero Trust policy..."
+    $prompt = "$($AgentSystemPrompts["Cyclops"])`n`nGenerate a comprehensive Zero Trust security policy for:`n$env`n`nInclude: identity verification, device trust, network segmentation, least-privilege, continuous monitoring, and incident response triggers."
+    $body = @{ model=$Agents["Cyclops"].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 180
+        Write-Host ""; Write-Host $resp.response -ForegroundColor Cyan
+        if ((Read-Host "Save policy? (Y/N)") -match "^[Yy]") {
+            $sessDir = "$PSScriptRoot\CHAMP-Sessions"; if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory $sessDir | Out-Null }
+            Set-Content "$sessDir\zerotrust-$(Get-Date -Format 'yyyyMMdd-HHmmss').md" -Value "# Zero Trust Policy`n`n**Environment:** $env`n`n$($resp.response)" -Encoding UTF8; Write-OK "Saved."
+        }
+    } catch { Write-Err "Policy generation failed: $_" }
+    Pause-Menu
+}
+
+function Generate-FirewallACL {
+    Show-Header
+    $scenario = Read-Host "Describe the network scenario for firewall ACL generation"
+    $prompt = "$($AgentSystemPrompts["Cyclops"])`n`nGenerate firewall ACL rules for: $scenario`nInclude allow and deny rules with comments."
+    $body = @{ model=$Agents["Cyclops"].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+        Write-Host ""; Write-Host $resp.response -ForegroundColor Green
+        if ((Read-Host "Save ACL rules? (Y/N)") -match "^[Yy]") {
+            $sessDir = "$PSScriptRoot\CHAMP-Sessions"; if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory $sessDir | Out-Null }
+            Set-Content "$sessDir\acl-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt" -Value $resp.response -Encoding UTF8; Write-OK "Saved."
+        }
+    } catch { Write-Err "ACL generation failed: $_" }
+    Pause-Menu
+}
+
+# -------------------------------------------------------
+# Threat Intelligence Feed
+# -------------------------------------------------------
+function Fetch-OTXFeed {
+    Show-Header
+    $apiKey = Get-EnvKey "OTX_API_KEY"
+    if (-not $apiKey) { Write-Warn "No OTX_API_KEY in .env (free key at otx.alienvault.com)"; $apiKey=Read-Host "Enter OTX key (or Enter to skip)"; if(-not $apiKey){Pause-Menu;return} }
+    Write-Info "Fetching latest OTX threat pulses..."
+    try {
+        $resp = Invoke-RestMethod -Uri "https://otx.alienvault.com/api/v1/pulses/subscribed?limit=10" -Headers @{"X-OTX-API-KEY"=$apiKey} -TimeoutSec 30
+        Write-Host ""; Write-Info "Latest Threat Pulses:"
+        foreach ($pulse in $resp.results) {
+            Write-Host ""; Write-Host "  $($pulse.name)" -ForegroundColor Yellow
+            Write-Host "  TLP: $($pulse.tlp)  IOCs: $($pulse.indicators_count)  Modified: $($pulse.modified)"
+        }
+        if ((Read-Host "Analyze with Cyclops? (Y/N)") -match "^[Yy]") {
+            $summary = ($resp.results | ForEach-Object { "- $($_.name): $($_.description.Substring(0,[Math]::Min(150,$_.description.Length)))" }) -join "`n"
+            $prompt  = "$($AgentSystemPrompts["Cyclops"])`n`nAnalyze these threat pulses and identify critical threats:`n$summary"
+            $body    = @{ model=$Agents["Cyclops"].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+            $aiResp  = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+            Write-Host ""; Write-Host "Cyclops Analysis:" -ForegroundColor Red; Write-Host $aiResp.response
+        }
+    } catch { Write-Err "OTX feed failed: $_" }
+    Pause-Menu
+}
+
+# -------------------------------------------------------
+# CHAMP-QN Integration
+# -------------------------------------------------------
+function Initialize-CHAMPQNConfig {
+    if (-not (Test-Path $CHAMPQNConfigFile)) { @{ Host=""; Port="8089"; ApiKey=""; NodeId="" } | ConvertTo-Json | Set-Content $CHAMPQNConfigFile -Encoding UTF8 }
+}
+
+function Configure-CHAMPQNConnection {
+    Show-Header; Initialize-CHAMPQNConfig; Write-Info "CHAMP-QN Connection Setup"
+    $config = Get-Content $CHAMPQNConfigFile -Raw | ConvertFrom-Json
+    $h = Read-Host "Host (current: $(if($config.Host){$config.Host}else{'not set'}))"; $p = Read-Host "Port (current: $($config.Port))"
+    $k = Read-Host "API key"; $n = Read-Host "Node ID"
+    if ($h) { $config.Host=$h }; if ($p) { $config.Port=$p }; if ($k) { $config.ApiKey=$k }; if ($n) { $config.NodeId=$n }
+    $config | ConvertTo-Json | Set-Content $CHAMPQNConfigFile -Encoding UTF8
+    Write-OK "CHAMP-QN connection configured."; Pause-Menu
+}
+
+function Get-CHAMPQNStatus {
+    Show-Header; Initialize-CHAMPQNConfig
+    $config = Get-Content $CHAMPQNConfigFile -Raw | ConvertFrom-Json
+    if (-not $config.Host) { Write-Warn "CHAMP-QN not configured. Use option 1."; Pause-Menu; return }
+    try {
+        $resp = Invoke-RestMethod -Uri "http://$($config.Host):$($config.Port)/api/status" -Headers @{"Authorization"="Bearer $($config.ApiKey)"} -TimeoutSec 10
+        Write-Host ""; Write-Host ($resp | ConvertTo-Json -Depth 5) -ForegroundColor Green
+    } catch { Write-Warn "Could not reach CHAMP-QN at $($config.Host):$($config.Port)" }
+    Pause-Menu
+}
+
+function Send-CHAMPQNQuery {
+    Show-Header; Initialize-CHAMPQNConfig
+    $config = Get-Content $CHAMPQNConfigFile -Raw | ConvertFrom-Json
+    if (-not $config.Host) { Write-Warn "CHAMP-QN not configured."; Pause-Menu; return }
+    $query = Read-Host "Query to send to CHAMP-QN"; $agent = Read-Host "AI agent for synthesis (e.g. Professor-X)"
+    if (-not $Agents.ContainsKey($agent)) { $agent = "Professor-X" }
+    try {
+        $headers = @{ "Authorization"="Bearer $($config.ApiKey)"; "Content-Type"="application/json" }
+        $body    = @{ query=$query; nodeId=$config.NodeId } | ConvertTo-Json
+        $resp    = Invoke-RestMethod -Uri "http://$($config.Host):$($config.Port)/api/query" -Method POST -Headers $headers -Body $body -TimeoutSec 30
+        Write-Host ""; Write-Host ($resp | ConvertTo-Json -Depth 5) -ForegroundColor Cyan
+        if ((Read-Host "Analyze with $agent? (Y/N)") -match "^[Yy]") {
+            $aiPrompt = "$($AgentSystemPrompts[$agent])`n`nAnalyze this CHAMP-QN result:`nQuery: $query`nResult: $($resp | ConvertTo-Json)"
+            $aiBody   = @{ model=$Agents[$agent].Model; prompt=$aiPrompt; stream=$false } | ConvertTo-Json
+            $aiResp   = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $aiBody -ContentType "application/json" -TimeoutSec 120
+            Write-Host ""; Write-Host $aiResp.response -ForegroundColor Yellow
+        }
+    } catch { Write-Err "CHAMP-QN query failed: $_" }
+    Pause-Menu
+}
+
+function Show-CHAMPQNMenu {
+    Show-Header; Write-Info "CHAMP-QN Integration"; Write-Info "--------------------"
+    Write-Host "1. Configure Connection"; Write-Host "2. Node Status"
+    Write-Host "3. Send Query + AI Analysis"; Write-Host "4. Back"
+}
+
+function CHAMPQN-Menu {
+    do {
+        Show-CHAMPQNMenu; $choice = Read-Host "Select"
+        switch ($choice) { "1"{Configure-CHAMPQNConnection} "2"{Get-CHAMPQNStatus} "3"{Send-CHAMPQNQuery} "4"{return} default{Play-ErrorSound;Pause-Menu} }
+    } while ($choice -ne "4")
+}
+
+# -------------------------------------------------------
+# Agent Operations Menu (Option 27)
+# -------------------------------------------------------
+function Show-AgentOpsMenu {
+    Show-Header; Write-Info "Agent Operations  [Mode: $Global:CHAMPMode]"; Write-Info "------------------------------------------"
+    Write-Host "1. Multi-Agent Council      (4 agents debate + synthesize)" -ForegroundColor Yellow
+    Write-Host "2. Agent Chain Pipeline     (output flows agent to agent)"   -ForegroundColor Yellow
+    Write-Host "3. Custom Agent Builder     (create and register new agents)" -ForegroundColor Cyan
+    Write-Host "4. Agent Performance        (response time stats)"           -ForegroundColor Cyan
+    Write-Host "5. Scheduled Tasks          (run agents on a timer)"         -ForegroundColor Green
+    Write-Host "6. Natural Language Infra   (describe it, Forge builds it)"  -ForegroundColor Green
+    Write-Host "7. Whisper STT Setup        (local speech recognition)"      -ForegroundColor Magenta
+    Write-Host "8. Audit Trail              (search all AI interactions)"    -ForegroundColor DarkCyan
+    Write-Host "9. Back"
+}
+
+function AgentOps-Menu {
+    do {
+        Show-AgentOpsMenu; $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { Invoke-AgentCouncil } "2" { Invoke-AgentChain }
+            "3" { AgentBuilder-Menu }  "4" { Show-AgentPerformance }
+            "5" { Scheduler-Menu }     "6" { Invoke-NLInfrastructure }
+            "7" { Show-Header; if (Test-WhisperAvailable) { Write-OK "Whisper ready." } else { Install-WhisperSTT } }
+            "8" { Search-AuditTrail }  "9" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "9")
+}
+
+# ============================================================
 # ADVANCED AI PLATFORM
 # ============================================================
 
@@ -6888,19 +7430,23 @@ function Show-CyberMenu {
     Write-Host "4. Generate YARA Rule"
     Write-Host "5. MITRE ATT&CK Mapping"
     Write-Host "6. Generate Sigma Rule"
-    Write-Host "7. Back"
+    Write-Host "7. Zero Trust Policy Generator"
+    Write-Host "8. Firewall ACL Generator"
+    Write-Host "9. Threat Intelligence Feed (OTX)"
+    Write-Host "10. Back"
 }
 
 function Cyber-Menu {
     do {
         Show-CyberMenu; $choice = Read-Host "Select"
         switch ($choice) {
-            "1" { Lookup-VirusTotal } "2" { Lookup-AbuseIPDB } "3" { Lookup-CVE }
-            "4" { Generate-YARARule } "5" { Map-MITREAttack } "6" { Generate-SigmaRule }
-            "7" { return }
+            "1"  { Lookup-VirusTotal } "2"  { Lookup-AbuseIPDB } "3"  { Lookup-CVE }
+            "4"  { Generate-YARARule } "5"  { Map-MITREAttack }  "6"  { Generate-SigmaRule }
+            "7"  { Generate-ZeroTrustPolicy } "8" { Generate-FirewallACL }
+            "9"  { Fetch-OTXFeed }     "10" { return }
             default { Play-ErrorSound; Pause-Menu }
         }
-    } while ($choice -ne "7")
+    } while ($choice -ne "10")
 }
 
 # -------------------------------------------------------
@@ -7139,8 +7685,10 @@ function Show-MainMenu {
     Write-Host "22. CEREBRO Chat / Voice Conversation" -ForegroundColor Green
     Write-Host "23. Exit"
     Write-Host "24. Advanced AI Platform    (Memory, RAG, API, Agents, Deploy)" -ForegroundColor Cyan
-    Write-Host "25. Cybersecurity Toolkit   (VirusTotal, CVE, YARA, MITRE, Sigma)" -ForegroundColor Red
+    Write-Host "25. Cybersecurity Toolkit   (VirusTotal, CVE, YARA, MITRE, Sigma, ZT, OTX)" -ForegroundColor Red
     Write-Host "26. Observability Stack     (Prometheus + Grafana + Loki)" -ForegroundColor Yellow
+    Write-Host "27. Agent Operations        (Council, Chain, Builder, Scheduler, NL Infra)" -ForegroundColor Magenta
+    Write-Host "28. CHAMP-QN Integration    (connect to CHAMP-QN orchestration platform)" -ForegroundColor Green
     Write-Host ""
     if ($EnableVoice)  { Write-OK   "Voice  : ON"  } else { Write-Warn "Voice  : OFF" }
     if ($EnableSounds) { Write-OK   "Sounds : ON"  } else { Write-Warn "Sounds : OFF" }
@@ -7153,6 +7701,7 @@ Write-ActivityLog "CHAMP AI Control Center started"
 
 do {
     Test-WakeWordTriggered
+    Run-DueScheduledTasks
     Show-MainMenu
     $choice = Read-Host "Select an option"
     switch ($choice) {
@@ -7188,6 +7737,8 @@ do {
         "24" { Advanced-Menu }
         "25" { Cyber-Menu }
         "26" { Observability-Menu }
+        "27" { AgentOps-Menu }
+        "28" { CHAMPQN-Menu }
         default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
     }
 } while ($choice -ne "23")
