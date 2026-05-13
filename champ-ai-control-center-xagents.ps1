@@ -5837,24 +5837,22 @@ function Start-WakeWordListener {
         $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
         $recognizer.SetInputToDefaultAudioDevice()
 
-        # Constrained grammar  -  only listen for these exact phrases
-        $choices = New-Object System.Speech.Recognition.Choices
-        $choices.Add("hey cerebro")
-        $choices.Add("cerebro")
-        $choices.Add("hey CEREBRO")
-        $choices.Add("CEREBRO wake up")
-        $choices.Add("cerebro wake up")
-        $gb = New-Object System.Speech.Recognition.GrammarBuilder $choices
-        $grammar = New-Object System.Speech.Recognition.Grammar $gb
+        # Dictation grammar: catches free speech, then we filter for "cerebro"
+        # This is far more tolerant than constrained grammar for wake-word use
+        $grammar = New-Object System.Speech.Recognition.DictationGrammar
         $recognizer.LoadGrammar($grammar)
 
         # Listen in a loop until the trigger file signals stop
         while (-not (Test-Path "$triggerPath.stop")) {
             try {
-                $result = $recognizer.Recognize([TimeSpan]::FromSeconds(3))
+                $result = $recognizer.Recognize([TimeSpan]::FromSeconds(4))
                 if ($result -and $result.Text) {
-                    # Write trigger file so main thread knows to activate
-                    Set-Content -Path $triggerPath -Value $result.Text -Encoding UTF8
+                    $text = $result.Text.ToLower()
+                    # Match any phrase containing "cerebro" (covers "hey cerebro",
+                    # "cerebro wake up", and mis-heard variants like "serebro")
+                    if ($text -match 'cerebro|serebro|cerabro|cerebra') {
+                        Set-Content -Path $triggerPath -Value $result.Text -Encoding UTF8
+                    }
                 }
             } catch {}
         }
@@ -5888,6 +5886,46 @@ function Stop-WakeWordListener {
     Write-OK "Wake word listener stopped."
     Speak-CHAMP "Wake word listener deactivated."
     Write-ActivityLog "Wake word listener stopped"
+    Pause-Menu
+}
+
+function Test-WakeWordMic {
+    if (-not $Global:SpeechRecognitionAvailable) {
+        Write-Warn "System.Speech assembly not available on this machine."
+        Pause-Menu; return
+    }
+    Write-Host ""
+    Write-Host "  MIC / WAKE WORD DIAGNOSTIC" -ForegroundColor Cyan
+    Write-Host "  ----------------------------" -ForegroundColor DarkGray
+    Write-Host "  Speak anything for 5 seconds. CEREBRO will show what it heard." -ForegroundColor Yellow
+    Write-Host "  (If nothing shows, your mic or Windows Speech Recognition needs setup.)" -ForegroundColor DarkGray
+    Write-Host ""
+    try {
+        $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+        $rec.SetInputToDefaultAudioDevice()
+        $rec.LoadGrammar((New-Object System.Speech.Recognition.DictationGrammar))
+        $result = $rec.Recognize([TimeSpan]::FromSeconds(5))
+        $rec.Dispose()
+        if ($result -and $result.Text) {
+            Write-Host "  Heard: " -NoNewline -ForegroundColor Gray
+            Write-Host $result.Text -ForegroundColor Green
+            $lower = $result.Text.ToLower()
+            if ($lower -match 'cerebro|serebro|cerabro|cerebra') {
+                Write-OK "  Wake word DETECTED. Listener would have triggered."
+            } else {
+                Write-Warn "  Wake word NOT detected in what was heard."
+                Write-Host "  Tip: try saying 'Hey CEREBRO' clearly and slowly." -ForegroundColor DarkGray
+            }
+        } else {
+            Write-Warn "  Nothing recognized. Check that:"
+            Write-Host "   1. Your microphone is set as the DEFAULT recording device in Windows Sound settings." -ForegroundColor DarkGray
+            Write-Host "   2. Windows Speech Recognition is set up: Start -> 'Set up Speech Recognition'." -ForegroundColor DarkGray
+            Write-Host "   3. No other app is using the microphone exclusively." -ForegroundColor DarkGray
+        }
+    } catch {
+        Write-Warn "  Error initializing microphone: $_"
+        Write-Host "  Run 'Set up Speech Recognition' from the Windows Start menu to configure your mic." -ForegroundColor DarkGray
+    }
     Pause-Menu
 }
 
@@ -6227,7 +6265,8 @@ function Chat-Menu {
         } else {
             Write-Host "8. Start wake word listener (say 'Hey CEREBRO' anytime)" -ForegroundColor DarkGreen
         }
-        Write-Host "9. Back"
+        Write-Host "9. Test Microphone / Wake Word (diagnostic)" -ForegroundColor DarkYellow
+        Write-Host "10. Back"
         Write-Host ""
         Write-Host "  In conversation: type 'exit' to leave, 'switch' to change agent," -ForegroundColor DarkGray
         Write-Host "  'voice on/off' to toggle mic, 'clear' to reset memory." -ForegroundColor DarkGray
@@ -6266,10 +6305,11 @@ function Chat-Menu {
             "8" {
                 if ($Global:WakeWordActive) { Stop-WakeWordListener } else { Start-WakeWordListener }
             }
-            "9" { return }
+            "9" { Test-WakeWordMic }
+            "10" { return }
             default { Play-ErrorSound; Pause-Menu }
         }
-    } while ($c -ne "9")
+    } while ($c -ne "10")
 }
 
 # -----------------------------
