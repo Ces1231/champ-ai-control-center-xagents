@@ -58,6 +58,8 @@ function Initialize-WebUI {
     param([string]$ScriptRoot, [string]$WebUIPort = "8091")
     $webDir = "$ScriptRoot\CHAMP-WebUI"
     if (-not (Test-Path $webDir)) { New-Item -ItemType Directory -Path $webDir | Out-Null }
+    # Only regenerate if the file doesn't exist (skip on every subsequent launch)
+    if (Test-Path "$webDir\index.html") { return }
     $html = @"
 <!DOCTYPE html>
 <html lang="en">
@@ -543,10 +545,17 @@ function Write-Info { param([string]$msg) Write-Host $msg -ForegroundColor Cyan 
 # Audio/speech
 # -----------------------------
 function Speak-CHAMP {
-    param([string]$Message)
+    param([string]$Message, [switch]$Wait)
     Write-Host $Message
     if ($EnableVoice -and $Global:CHAMPSpeaker) {
-        try { $Global:CHAMPSpeaker.Speak($Message) } catch { Write-Host "Voice output failed." }
+        try {
+            if ($Wait) {
+                $Global:CHAMPSpeaker.Speak($Message)
+            } else {
+                # Non-blocking: voice plays while menu renders
+                $Global:CHAMPSpeaker.SpeakAsync($Message)
+            }
+        } catch { Write-Host "Voice output failed." }
     }
 }
 
