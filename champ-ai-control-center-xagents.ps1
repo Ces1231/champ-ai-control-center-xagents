@@ -328,7 +328,7 @@ function Plugins-Menu {
 # -----------------------------
 $Agents = @{
     "Professor-X" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Strategic reasoning, architecture, planning, and executive assistant"
         Keywords = @("plan","strategy","architect","design","roadmap","decide","advise","recommend","think")
     }
@@ -338,22 +338,22 @@ $Agents = @{
         Keywords = @("code","debug","script","function","error","python","powershell","docker","build","deploy","fix","bug","implement","class","module","api")
     }
     "Cyclops" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Cybersecurity analysis, IOC review, logs, triage, and focused operations"
         Keywords = @("security","threat","malware","ioc","log","triage","attack","vulnerability","cve","firewall","incident","phishing","breach","scan","audit")
     }
     "Nightcrawler" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Fast lightweight assistant for quick local responses"
         Keywords = @("quick","fast","simple","brief","short","explain","what is","define","summarize","tldr")
     }
     "Wolverine" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Recovery, resilience, service checks, watchdog actions, and emergency restart"
         Keywords = @("recover","restart","down","broken","fix service","health","watchdog","restore","crashed","failed")
     }
     "Magneto" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Experimental engineering, advanced build logic, and future larger-model slot"
         Keywords = @("experiment","advanced","compile","assembly","low level","optimize","performance","benchmark","prototype")
     }
@@ -363,22 +363,22 @@ $Agents = @{
         Keywords = @("image","screenshot","photo","picture","vision","describe","look at","see","visual","diagram","ui from")
     }
     "Beast" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Scientific reasoning and research  -  thinks step by step before answering"
         Keywords = @("reason","research","analyse","hypothesis","scientific","step by step","think through","logic","proof","deduce","infer","investigate","methodology")
     }
     "Storm" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Creative writing, versatile general-purpose tasks, and long-form content"
         Keywords = @("write","creative","story","draft","email","report","blog","essay","document","content","generate","compose","narrative","describe in detail")
     }
     "Psylocke" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Multilingual precision, structured output, and cross-language tasks"
         Keywords = @("translate","multilingual","japanese","chinese","french","spanish","german","language","structured","json output","yaml","format","parse","extract")
     }
     "Gambit" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Longer context conversational tasks, creative problem solving, and charming explanations"
         Keywords = @("conversation","chat","long","context","discuss","elaborate","expand","brainstorm","creative solution","explain in depth","walk me through")
     }
@@ -389,7 +389,7 @@ $Agents = @{
     }
     # --- New agents from previous batch ---
     "Jubilee" = @{
-        Model    = "qwen2:0.5b"
+        Model    = "phi3:mini"
         Role     = "Ultra-fast 3B assistant for instant answers with minimal resource use"
         Keywords = @("instant","tiny","smallest","3b","lightweight","quick answer","no wait","snap","flash")
     }
