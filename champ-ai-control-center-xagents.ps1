@@ -794,20 +794,28 @@ function Register-AgentModels {
     }
 
     $modelfileDir = $PSScriptRoot
-    $created = @(); $failed = @()
+    $created = @(); $failed = @(); $skipped = @()
+
+    # Get list of downloaded base models to avoid hanging on missing ones
+    $installedModels = (ollama list 2>&1 | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] })
 
     foreach ($agent in $AgentSystemPrompts.Keys | Sort-Object) {
         $baseModel = $Agents[$agent].Model
         $systemPrompt = $AgentSystemPrompts[$agent]
         $modelfilePath = "$modelfileDir\Modelfile-$agent"
 
+        # Skip agents whose base model isn't downloaded yet
+        if ($installedModels -notcontains $baseModel) {
+            Write-Warn "  Skipping $agent - base model '$baseModel' not downloaded yet"
+            $skipped += $agent
+            continue
+        }
+
         Write-Host "  Registering $agent ($baseModel)..." -NoNewline
 
-        # Write Modelfile
         $modelfileContent = "FROM $baseModel`nSYSTEM `"$systemPrompt`"`nPARAMETER temperature 0.7"
         $modelfileContent | Set-Content $modelfilePath -Encoding UTF8
 
-        # Create the named model
         $result = ollama create $agent -f $modelfilePath 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-OK " OK"
@@ -823,6 +831,9 @@ function Register-AgentModels {
     if ($created.Count -gt 0) {
         Write-OK "Registered: $($created -join ', ')"
         Write-Info "These agents now appear by name in Open WebUI at http://${OpenWebUIHost}:$OpenWebUIPort"
+    }
+    if ($skipped.Count -gt 0) {
+        Write-Warn "Skipped ($($skipped.Count)): $($skipped -join ', ') - base model not downloaded"
     }
     if ($failed.Count -gt 0) {
         Write-Warn "Failed: $($failed -join ', ')"
