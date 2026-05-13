@@ -19,6 +19,9 @@ $ActivityLogPath = "$PSScriptRoot\CHAMP-activity.log"
 $EnableVoice = $true
 $EnableSounds = $true
 
+# Keep Ollama model loaded in RAM permanently (no reload delay between chats)
+$env:OLLAMA_KEEP_ALIVE = "-1"
+
 # ============================================================
 # STREAMING RESPONSES
 # ============================================================
@@ -27,7 +30,16 @@ function Invoke-OllamaStream {
     $fullPrompt = if ($SystemPrompt) { "$SystemPrompt`n`n$Prompt" } else { $Prompt }
     $httpClient = New-Object System.Net.Http.HttpClient
     $httpClient.Timeout = [TimeSpan]::FromMinutes(5)
-    $bodyJson = (@{ model=$Model; prompt=$fullPrompt; stream=$true } | ConvertTo-Json)
+    $bodyJson = (@{
+        model   = $Model
+        prompt  = $fullPrompt
+        stream  = $true
+        options = @{
+            num_ctx     = 2048   # smaller context = faster per-token speed
+            num_predict = 512    # cap response length for snappy answers
+            temperature = 0.7
+        }
+    } | ConvertTo-Json -Depth 4)
     $content  = New-Object System.Net.Http.StringContent($bodyJson, [System.Text.Encoding]::UTF8, "application/json")
     $fullResponse = ""
     try {
