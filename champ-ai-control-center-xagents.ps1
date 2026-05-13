@@ -403,17 +403,26 @@ function Show-AgentMap {
 
 function Pull-AgentModels {
     Show-Header
-    Speak-CHAMP "This will pull all recommended X Agent models."
-    $confirm = Read-Host "Pull all agent models? Type YES to continue"
+    # Models requiring 48 GB+ RAM - skip on 32 GB systems
+    $skipModels = @("mixtral:8x7b","llama3.3:70b","deepseek-r1:70b","mixtral:8x22b","command-r-plus:104b","llama3.1:70b","command-r:35b")
+    Speak-CHAMP "This will pull all X Agent models compatible with 32 GB RAM."
+    Write-Warn "Skipping Tier 5 and Tier 6 models - they require 48 GB or more RAM."
+    Write-Info "Skipped: $($skipModels -join ', ')"
+    Write-Host ""
+    $confirm = Read-Host "Pull all compatible agent models? Type YES to continue"
     if ($confirm -ne "YES") { Speak-CHAMP "Model download cancelled."; Pause-Menu; return }
     foreach ($agent in $Agents.Keys | Sort-Object) {
         $model = $Agents[$agent].Model
+        if ($skipModels -contains $model) {
+            Write-Warn "Skipping $agent ($model) - requires 48 GB+ RAM"
+            continue
+        }
         Speak-CHAMP "Pulling model for $agent."
         Write-Host "Pulling $agent -> $model"
         ollama pull $model
     }
-    Speak-CHAMP "All X Agent models have been checked and pulled."
-    Send-ToastNotification "CHAMP AI" "All X-Agent models pulled successfully."
+    Speak-CHAMP "All compatible X Agent models have been pulled."
+    Send-ToastNotification "CHAMP AI" "All compatible X-Agent models pulled successfully."
     Play-SuccessSound
     Pause-Menu
 }
