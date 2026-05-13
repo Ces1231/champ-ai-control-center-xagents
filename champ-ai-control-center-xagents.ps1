@@ -8,6 +8,7 @@
 # -----------------------------
 # User Config
 # -----------------------------
+$Global:PluginRegistry = @()
 $OpenWebUIContainer = "champ-open-webui"
 $OpenWebUIPort = "1969"
 $OpenWebUIHost = "champ-ai-Control-center"
@@ -17,6 +18,295 @@ $ActivityLogPath = "$PSScriptRoot\CHAMP-activity.log"
 
 $EnableVoice = $true
 $EnableSounds = $true
+
+# ============================================================
+# STREAMING RESPONSES
+# ============================================================
+function Invoke-OllamaStream {
+    param([string]$Model, [string]$Prompt, [string]$SystemPrompt = "")
+    $fullPrompt = if ($SystemPrompt) { "$SystemPrompt`n`n$Prompt" } else { $Prompt }
+    $httpClient = New-Object System.Net.Http.HttpClient
+    $httpClient.Timeout = [TimeSpan]::FromMinutes(5)
+    $bodyJson = (@{ model=$Model; prompt=$fullPrompt; stream=$true } | ConvertTo-Json)
+    $content  = New-Object System.Net.Http.StringContent($bodyJson, [System.Text.Encoding]::UTF8, "application/json")
+    $fullResponse = ""
+    try {
+        $response = $httpClient.PostAsync("http://localhost:11434/api/generate", $content).GetAwaiter().GetResult()
+        $stream   = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $reader   = New-Object System.IO.StreamReader($stream)
+        while (-not $reader.EndOfStream) {
+            $line = $reader.ReadLine()
+            if ($line) {
+                try {
+                    $chunk = $line | ConvertFrom-Json
+                    if ($chunk.response) { Write-Host $chunk.response -NoNewline -ForegroundColor Cyan; $fullResponse += $chunk.response }
+                    if ($chunk.done) { break }
+                } catch {}
+            }
+        }
+        Write-Host ""
+        $reader.Close(); $stream.Close()
+    } catch { Write-Warn "Stream error: $_" }
+    finally { $httpClient.Dispose() }
+    return $fullResponse
+}
+
+# ============================================================
+# CHAMP WEB UI
+# ============================================================
+function Initialize-WebUI {
+    param([string]$ScriptRoot, [string]$WebUIPort = "8091")
+    $webDir = "$ScriptRoot\CHAMP-WebUI"
+    if (-not (Test-Path $webDir)) { New-Item -ItemType Directory -Path $webDir | Out-Null }
+    $html = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CHAMP AI Control Center</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0d0d0d;color:#e0e0e0;font-family:'Segoe UI',sans-serif;height:100vh;display:flex;flex-direction:column}
+  header{background:#111;border-bottom:1px solid #1a1a2e;padding:12px 24px;display:flex;align-items:center;gap:16px}
+  header h1{font-size:1.2rem;color:#a78bfa;letter-spacing:2px}
+  header span{font-size:.75rem;color:#555}
+  .tabs{display:flex;background:#0f0f0f;border-bottom:1px solid #1a1a2e}
+  .tab{padding:10px 24px;cursor:pointer;font-size:.85rem;color:#777;border-bottom:2px solid transparent;transition:.2s}
+  .tab.active{color:#a78bfa;border-bottom-color:#a78bfa}
+  .tab:hover{color:#e0e0e0}
+  .panel{display:none;flex:1;overflow:hidden}
+  .panel.active{display:flex;flex-direction:column}
+  /* Chat */
+  #chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:80%;padding:10px 14px;border-radius:8px;font-size:.9rem;line-height:1.5;white-space:pre-wrap}
+  .msg.user{background:#1a1a2e;align-self:flex-end;color:#c4b5fd}
+  .msg.ai{background:#111;align-self:flex-start;color:#e0e0e0;border:1px solid #1e1e3f}
+  .msg.system{align-self:center;color:#555;font-size:.75rem;font-style:italic}
+  #chat-input-row{display:flex;gap:8px;padding:12px 16px;background:#0f0f0f;border-top:1px solid #1a1a2e}
+  #agent-select{background:#111;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:.85rem}
+  #chat-input{flex:1;background:#111;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:8px 12px;font-size:.9rem;resize:none}
+  #chat-input:focus,#agent-select:focus{outline:none;border-color:#a78bfa}
+  #send-btn{background:#a78bfa;color:#0d0d0d;border:none;border-radius:6px;padding:8px 18px;font-weight:600;cursor:pointer;font-size:.85rem}
+  #send-btn:hover{background:#c4b5fd}
+  #send-btn:disabled{background:#333;color:#666;cursor:not-allowed}
+  /* Status / Agents / Models */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:16px;overflow-y:auto}
+  .card{background:#111;border:1px solid #1e1e3f;border-radius:8px;padding:14px}
+  .card h3{font-size:.85rem;color:#a78bfa;margin-bottom:6px}
+  .card p{font-size:.8rem;color:#aaa;line-height:1.4}
+  .badge{display:inline-block;font-size:.7rem;padding:2px 8px;border-radius:4px;font-weight:600}
+  .badge.green{background:#0d2b1d;color:#34d399}
+  .badge.red{background:#2b0d0d;color:#f87171}
+  .badge.blue{background:#0d1b2b;color:#60a5fa}
+  #status-bar{padding:8px 16px;background:#0a0a0a;font-size:.75rem;color:#555;border-top:1px solid #111}
+</style>
+</head>
+<body>
+<header>
+  <h1>X CHAMP AI</h1>
+  <span id="status-dot">●</span>
+  <span id="header-status">connecting...</span>
+</header>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('chat')">Chat</div>
+  <div class="tab" onclick="switchTab('status')">Status</div>
+  <div class="tab" onclick="switchTab('agents')">Agents</div>
+  <div class="tab" onclick="switchTab('models')">Models</div>
+</div>
+<div id="tab-chat" class="panel active">
+  <div id="chat-messages"><div class="msg system">CEREBRO online. Select an agent and start chatting.</div></div>
+  <div id="chat-input-row">
+    <select id="agent-select"><option value="">Loading agents...</option></select>
+    <textarea id="chat-input" rows="1" placeholder="Ask anything..." onkeydown="handleKey(event)"></textarea>
+    <button id="send-btn" onclick="sendMessage()">Send</button>
+  </div>
+</div>
+<div id="tab-status" class="panel"><div id="status-grid" class="grid"></div></div>
+<div id="tab-agents" class="panel"><div id="agents-grid" class="grid"></div></div>
+<div id="tab-models" class="panel"><div id="models-grid" class="grid"></div></div>
+<div id="status-bar">CHAMP AI Control Center — X-Agent Edition</div>
+<script>
+const API = 'http://localhost:$WebUIPort/api';
+let agents = [];
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['chat','status','agents','models'][i]===name));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='status') loadStatus();
+  if(name==='models') loadModels();
+}
+
+async function loadAgents() {
+  try {
+    const r = await fetch(API+'/agents');
+    const d = await r.json();
+    agents = d.agents || [];
+    const sel = document.getElementById('agent-select');
+    sel.innerHTML = agents.map(a=>`<option value="`+a+`">`+a+`</option>`).join('');
+    const grid = document.getElementById('agents-grid');
+    grid.innerHTML = agents.map(a=>`<div class="card"><h3>`+a+`</h3><p><span class="badge blue">agent</span></p></div>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function loadStatus() {
+  try {
+    const r = await fetch(API+'/status');
+    const d = await r.json();
+    document.getElementById('status-grid').innerHTML = `
+      <div class="card"><h3>Gateway</h3><p><span class="badge green">ONLINE</span></p><p style="margin-top:6px;font-size:.75rem">`+d.timestamp+`</p></div>
+      <div class="card"><h3>Version</h3><p>`+d.version+`</p></div>`;
+    document.getElementById('header-status').textContent = 'online';
+    document.getElementById('status-dot').style.color = '#34d399';
+  } catch(e) {
+    document.getElementById('header-status').textContent = 'offline';
+    document.getElementById('status-dot').style.color = '#f87171';
+  }
+}
+
+async function loadModels() {
+  try {
+    const r = await fetch(API+'/models');
+    const d = await r.json();
+    document.getElementById('models-grid').innerHTML = (d.models||[]).map(m=>`<div class="card"><h3>`+m+`</h3><p><span class="badge green">ready</span></p></div>`).join('');
+  } catch(e) {}
+}
+
+function addMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg '+role;
+  div.textContent = text;
+  const msgs = document.getElementById('chat-messages');
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const agentSel = document.getElementById('agent-select');
+  const btn = document.getElementById('send-btn');
+  const text = input.value.trim();
+  if (!text) return;
+  const agent = agentSel.value;
+  addMessage('user', text);
+  input.value = '';
+  btn.disabled = true;
+  const aiDiv = addMessage('ai', '...');
+  try {
+    const r = await fetch(API+'/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model: agent, prompt: text })
+    });
+    const d = await r.json();
+    aiDiv.textContent = d.response || d.error || 'No response.';
+  } catch(e) { aiDiv.textContent = 'Error: '+e.message; }
+  btn.disabled = false;
+  document.getElementById('chat-messages').scrollTop = 9999;
+}
+
+function handleKey(e) { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
+
+loadAgents();
+loadStatus();
+setInterval(loadStatus, 30000);
+</script>
+</body>
+</html>
+"@
+    Set-Content "$webDir\index.html" -Value $html -Encoding UTF8
+}
+
+function Open-CHAMPWebUI {
+    param([string]$Port = "8091")
+    Start-Process "http://localhost:$Port"
+    Write-Info "Opening CHAMP Web UI at http://localhost:$Port"
+    Write-Info "Start the API Gateway first (option 24 -> 3) if not already running."
+    Pause-Menu
+}
+
+# ============================================================
+# PLUGIN SYSTEM
+# ============================================================
+function Initialize-Plugins {
+    $pluginDir = "$PSScriptRoot\CHAMP-Plugins"
+    if (-not (Test-Path $pluginDir)) {
+        New-Item -ItemType Directory -Path $pluginDir | Out-Null
+        # Write a sample plugin
+        Set-Content "$pluginDir\example-plugin.ps1" -Encoding UTF8 -Value @'
+# CHAMP Plugin
+# Name: Example Plugin
+# Description: A sample plugin showing the plugin structure
+
+function Run-ExamplePlugin {
+    Show-Header
+    Write-Info "Example Plugin"
+    Write-Info "--------------"
+    Write-Host "This is a sample CHAMP AI plugin." -ForegroundColor Cyan
+    Write-Host "Copy this file, rename it, and replace Run-ExamplePlugin with your function."
+    Write-Host ""
+    Write-Host "You have full access to all CHAMP AI functions including:"
+    Write-Host "  - Invoke-OllamaStream / Activate-Agent"
+    Write-Host "  - All 34 agent models via `$Agents and `$AgentSystemPrompts"
+    Write-Host "  - Write-OK, Write-Warn, Write-Err, Speak-CHAMP, Pause-Menu"
+    Pause-Menu
+}
+'@
+    }
+    $Global:PluginRegistry = @()
+    Get-ChildItem "$pluginDir\*.ps1" -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            . $_.FullName
+            # Read metadata from comments
+            $lines   = Get-Content $_.FullName -TotalCount 5
+            $nameL   = $lines | Where-Object { $_ -match "^# Name:" }       | Select-Object -First 1
+            $descL   = $lines | Where-Object { $_ -match "^# Description:" } | Select-Object -First 1
+            $pName   = if ($nameL)  { ($nameL  -split ":",2)[1].Trim() } else { $_.BaseName }
+            $pDesc   = if ($descL)  { ($descL  -split ":",2)[1].Trim() } else { "Plugin" }
+            # Find the Run- function name
+            $funcLine = Get-Content $_.FullName | Where-Object { $_ -match "^function Run-" } | Select-Object -First 1
+            $funcName = if ($funcLine -match "function (Run-\S+)") { $Matches[1] } else { $null }
+            if ($funcName) {
+                $Global:PluginRegistry += @{ Name=$pName; Description=$pDesc; Function=$funcName; File=$_.Name }
+                Write-Info "Plugin loaded: $pName"
+            }
+        } catch { Write-Warn "Plugin load failed ($($_.Name)): $_" }
+    }
+}
+
+function Show-PluginsMenu {
+    Show-Header
+    Write-Info "CHAMP AI Plugins"; Write-Info "----------------"
+    if ($Global:PluginRegistry.Count -eq 0) {
+        Write-Warn "No plugins loaded. Drop .ps1 files into CHAMP-Plugins\ to add features."
+        Write-Info "A sample plugin was created at CHAMP-Plugins\example-plugin.ps1"
+        Pause-Menu; return
+    }
+    for ($i = 0; $i -lt $Global:PluginRegistry.Count; $i++) {
+        $p = $Global:PluginRegistry[$i]
+        Write-Host "$($i+1). $($p.Name)" -ForegroundColor Cyan
+        Write-Host "   $($p.Description)" -ForegroundColor DarkGray
+    }
+    Write-Host "$($Global:PluginRegistry.Count+1). Back"
+}
+
+function Plugins-Menu {
+    do {
+        Show-PluginsMenu
+        if ($Global:PluginRegistry.Count -eq 0) { return }
+        $choice = Read-Host "Select plugin"
+        if ($choice -match "^\d+$") {
+            $idx = [int]$choice - 1
+            if ($idx -ge 0 -and $idx -lt $Global:PluginRegistry.Count) {
+                $func = $Global:PluginRegistry[$idx].Function
+                if (Get-Command $func -ErrorAction SilentlyContinue) { & $func }
+                else { Write-Warn "Plugin function '$func' not found."; Pause-Menu }
+            } elseif ($idx -eq $Global:PluginRegistry.Count) { return }
+        }
+    } while ($true)
+}
 
 # -----------------------------
 # X-Agent Model Map
@@ -5882,13 +6172,12 @@ function CEREBRO-ChatMode {
         # Save user turn
         Add-AgentHistory -Agent $AgentName -Role "user" -Content $userInput
 
-        # Get response
+        # Get response (streaming)
         Write-Host ""
         Write-Host "$AgentName > " -ForegroundColor Yellow -NoNewline
-        $response = Invoke-OllamaWithSystem -Model $model -SystemPrompt $system -UserPrompt $fullPrompt
+        $response = Invoke-OllamaStream -Model $model -Prompt $fullPrompt -SystemPrompt $system
 
         if ($response) {
-            Write-Host $response -ForegroundColor White
             Add-AgentHistory -Agent $AgentName -Role "assistant" -Content $response
 
             # Speak  -  truncate very long responses for voice
@@ -7035,9 +7324,10 @@ function Start-AIAPIGateway {
     Write-Info "Starting CHAMP AI API Gateway on http://localhost:$APIGatewayPort/api/..."
     $port = $APIGatewayPort
     $Global:APIGatewayJob = Start-Job -ScriptBlock {
-        param($port)
+        param($port, $scriptRoot)
         $listener = New-Object System.Net.HttpListener
         $listener.Prefixes.Add("http://localhost:$port/api/")
+        $listener.Prefixes.Add("http://localhost:$port/")
         $listener.Start()
         while ($listener.IsListening) {
             try {
@@ -7063,6 +7353,18 @@ function Start-AIAPIGateway {
                             @{ response=$or.response; model=$reqObj.model }
                         } catch { @{ error=$_.ToString() } }
                     }
+                    "^/$"          {
+                        $htmlPath = "$scriptRoot\CHAMP-WebUI\index.html"
+                        if (Test-Path $htmlPath) {
+                            $htmlBytes = [System.IO.File]::ReadAllBytes($htmlPath)
+                            $res.ContentType = "text/html; charset=utf-8"
+                            $res.ContentLength64 = $htmlBytes.Length
+                            $res.OutputStream.Write($htmlBytes, 0, $htmlBytes.Length)
+                            $res.OutputStream.Close()
+                            continue
+                        }
+                        @{ error="Web UI not found. Run Initialize-WebUI first." }
+                    }
                     default { @{ error="Unknown endpoint. Available: /api/status /api/agents /api/models /api/chat" } }
                 }
                 $json  = $responseObj | ConvertTo-Json -Depth 5
@@ -7072,7 +7374,7 @@ function Start-AIAPIGateway {
                 $res.OutputStream.Close()
             } catch { Start-Sleep -Milliseconds 100 }
         }
-    } -ArgumentList $port
+    } -ArgumentList $port, $PSScriptRoot
     Start-Sleep -Seconds 1
     if ($Global:APIGatewayJob.State -eq "Running") {
         Write-OK "API Gateway running at http://localhost:$APIGatewayPort/api/"
@@ -7689,6 +7991,7 @@ function Show-MainMenu {
     Write-Host "26. Observability Stack     (Prometheus + Grafana + Loki)" -ForegroundColor Yellow
     Write-Host "27. Agent Operations        (Council, Chain, Builder, Scheduler, NL Infra)" -ForegroundColor Magenta
     Write-Host "28. CHAMP-QN Integration    (connect to CHAMP-QN orchestration platform)" -ForegroundColor Green
+    Write-Host "29. Plugins                 (drop .ps1 files in CHAMP-Plugins\ to extend)" -ForegroundColor DarkYellow
     Write-Host ""
     if ($EnableVoice)  { Write-OK   "Voice  : ON"  } else { Write-Warn "Voice  : OFF" }
     if ($EnableSounds) { Write-OK   "Sounds : ON"  } else { Write-Warn "Sounds : OFF" }
@@ -7697,6 +8000,8 @@ function Show-MainMenu {
 
 CHAMP-Greeting
 Ensure-HostsEntry
+Initialize-Plugins
+Initialize-WebUI -ScriptRoot $PSScriptRoot
 Write-ActivityLog "CHAMP AI Control Center started"
 
 do {
@@ -7739,6 +8044,7 @@ do {
         "26" { Observability-Menu }
         "27" { AgentOps-Menu }
         "28" { CHAMPQN-Menu }
+        "29" { Plugins-Menu }
         default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
     }
 } while ($choice -ne "23")
