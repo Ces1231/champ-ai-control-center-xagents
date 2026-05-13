@@ -35,8 +35,9 @@ function Invoke-OllamaStream {
         prompt  = $fullPrompt
         stream  = $true
         options = @{
-            num_ctx     = 2048   # smaller context = faster per-token speed
+            num_ctx     = 1024   # tight context = faster per-token speed
             num_predict = 512    # cap response length for snappy answers
+            num_thread  = 16     # use all CPU cores
             temperature = 0.7
         }
     } | ConvertTo-Json -Depth 4)
@@ -327,7 +328,7 @@ function Plugins-Menu {
 # -----------------------------
 $Agents = @{
     "Professor-X" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Strategic reasoning, architecture, planning, and executive assistant"
         Keywords = @("plan","strategy","architect","design","roadmap","decide","advise","recommend","think")
     }
@@ -337,22 +338,22 @@ $Agents = @{
         Keywords = @("code","debug","script","function","error","python","powershell","docker","build","deploy","fix","bug","implement","class","module","api")
     }
     "Cyclops" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Cybersecurity analysis, IOC review, logs, triage, and focused operations"
         Keywords = @("security","threat","malware","ioc","log","triage","attack","vulnerability","cve","firewall","incident","phishing","breach","scan","audit")
     }
     "Nightcrawler" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Fast lightweight assistant for quick local responses"
         Keywords = @("quick","fast","simple","brief","short","explain","what is","define","summarize","tldr")
     }
     "Wolverine" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Recovery, resilience, service checks, watchdog actions, and emergency restart"
         Keywords = @("recover","restart","down","broken","fix service","health","watchdog","restore","crashed","failed")
     }
     "Magneto" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Experimental engineering, advanced build logic, and future larger-model slot"
         Keywords = @("experiment","advanced","compile","assembly","low level","optimize","performance","benchmark","prototype")
     }
@@ -362,22 +363,22 @@ $Agents = @{
         Keywords = @("image","screenshot","photo","picture","vision","describe","look at","see","visual","diagram","ui from")
     }
     "Beast" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Scientific reasoning and research  -  thinks step by step before answering"
         Keywords = @("reason","research","analyse","hypothesis","scientific","step by step","think through","logic","proof","deduce","infer","investigate","methodology")
     }
     "Storm" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Creative writing, versatile general-purpose tasks, and long-form content"
         Keywords = @("write","creative","story","draft","email","report","blog","essay","document","content","generate","compose","narrative","describe in detail")
     }
     "Psylocke" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Multilingual precision, structured output, and cross-language tasks"
         Keywords = @("translate","multilingual","japanese","chinese","french","spanish","german","language","structured","json output","yaml","format","parse","extract")
     }
     "Gambit" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Longer context conversational tasks, creative problem solving, and charming explanations"
         Keywords = @("conversation","chat","long","context","discuss","elaborate","expand","brainstorm","creative solution","explain in depth","walk me through")
     }
@@ -388,7 +389,7 @@ $Agents = @{
     }
     # --- New agents from previous batch ---
     "Jubilee" = @{
-        Model    = "phi3:mini"
+        Model    = "qwen2:0.5b"
         Role     = "Ultra-fast 3B assistant for instant answers with minimal resource use"
         Keywords = @("instant","tiny","smallest","3b","lightweight","quick answer","no wait","snap","flash")
     }
