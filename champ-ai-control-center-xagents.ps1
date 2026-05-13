@@ -6197,7 +6197,917 @@ function Wolverine-Menu {
     } while ($choice -ne "4")
 }
 
-# -----------------------------
+# ============================================================
+# ADVANCED AI PLATFORM
+# ============================================================
+
+$Global:CHAMPMode   = "Default"
+$MemoryPath         = "$PSScriptRoot\CHAMP-Memory"
+$RAGPath            = "$PSScriptRoot\CHAMP-RAG"
+$Global:APIGatewayJob = $null
+$APIGatewayPort     = 8090
+$ObsStackPath       = "$PSScriptRoot\champ-observability"
+
+$CHAMPModes = @{
+    "Default"        = @{ DefaultAgent = "Professor-X"; Color = "Cyan";    Description = "Balanced general-purpose mode" }
+    "Builder"        = @{ DefaultAgent = "Forge";       Color = "Green";   Description = "Code, DevOps, infrastructure focus" }
+    "Cyber"          = @{ DefaultAgent = "Cyclops";     Color = "Red";     Description = "Cybersecurity and threat analysis focus" }
+    "Research"       = @{ DefaultAgent = "Beast";       Color = "Blue";    Description = "Deep research and scientific reasoning" }
+    "CHAMP-QN"       = @{ DefaultAgent = "Professor-X"; Color = "Yellow";  Description = "Orchestration and Zero Trust automation" }
+    "Infrastructure" = @{ DefaultAgent = "Cannonball";  Color = "Magenta"; Description = "IBM enterprise and infrastructure ops" }
+    "Executive"      = @{ DefaultAgent = "Professor-X"; Color = "White";   Description = "High-level strategy and executive summaries" }
+}
+
+# -------------------------------------------------------
+# Memory Layer
+# -------------------------------------------------------
+function Initialize-MemoryLayer {
+    if (-not (Test-Path $MemoryPath)) { New-Item -ItemType Directory -Path $MemoryPath | Out-Null }
+    if (-not (Test-Path $RAGPath))    { New-Item -ItemType Directory -Path $RAGPath    | Out-Null }
+    if (-not (Test-Path "$MemoryPath\projects.json"))  { Set-Content "$MemoryPath\projects.json"  "[]" -Encoding UTF8 }
+    if (-not (Test-Path "$MemoryPath\knowledge.json")) { Set-Content "$MemoryPath\knowledge.json" "[]" -Encoding UTF8 }
+}
+
+function New-ProjectProfile {
+    Show-Header; Initialize-MemoryLayer
+    $name   = Read-Host "Project name"
+    $desc   = Read-Host "Description"
+    $agents = Read-Host "Agents used (comma-separated)"
+    $tags   = Read-Host "Tags (comma-separated)"
+    $profile = @{
+        Id = [guid]::NewGuid().ToString(); Name = $name; Description = $desc
+        Agents = ($agents -split ",").Trim(); Tags = ($tags -split ",").Trim()
+        Created = (Get-Date -Format "yyyy-MM-dd HH:mm"); Updated = (Get-Date -Format "yyyy-MM-dd HH:mm")
+        Notes = @()
+    }
+    $pf = "$MemoryPath\projects.json"
+    $projects = Get-Content $pf -Raw | ConvertFrom-Json
+    $projects += $profile
+    $projects | ConvertTo-Json -Depth 10 | Set-Content $pf -Encoding UTF8
+    Write-OK "Project '$name' saved."; Pause-Menu
+}
+
+function List-ProjectProfiles {
+    Show-Header; Initialize-MemoryLayer
+    $projects = Get-Content "$MemoryPath\projects.json" -Raw | ConvertFrom-Json
+    if (-not $projects -or $projects.Count -eq 0) { Write-Warn "No projects saved yet."; Pause-Menu; return }
+    Write-Info "Saved Projects"; Write-Info "--------------"
+    foreach ($p in $projects) {
+        Write-Host ""; Write-Host "  $($p.Name)" -ForegroundColor Yellow
+        Write-Host "  $($p.Description)"; Write-Host "  Agents : $($p.Agents -join ', ')"
+        Write-Host "  Tags   : $($p.Tags -join ', ')"; Write-Host "  Created: $($p.Created)"
+    }
+    Pause-Menu
+}
+
+function Save-KnowledgeNote {
+    Show-Header; Initialize-MemoryLayer
+    $title    = Read-Host "Note title"
+    $category = Read-Host "Category (architecture/security/grant/runbook/other)"
+    Write-Host "Enter note content (type END on a new line to finish):"
+    $lines = @()
+    do { $line = Read-Host; if ($line -ne "END") { $lines += $line } } while ($line -ne "END")
+    $note = @{
+        Id = [guid]::NewGuid().ToString(); Title = $title; Category = $category
+        Content = ($lines -join "`n"); Created = (Get-Date -Format "yyyy-MM-dd HH:mm")
+    }
+    $kf = "$MemoryPath\knowledge.json"
+    $notes = Get-Content $kf -Raw | ConvertFrom-Json
+    $notes += $note
+    $notes | ConvertTo-Json -Depth 10 | Set-Content $kf -Encoding UTF8
+    Write-OK "Note '$title' saved."; Pause-Menu
+}
+
+function Search-KnowledgeNotes {
+    Show-Header; Initialize-MemoryLayer
+    $query = Read-Host "Search query"
+    $notes = Get-Content "$MemoryPath\knowledge.json" -Raw | ConvertFrom-Json
+    $results = $notes | Where-Object { $_.Title -match $query -or $_.Content -match $query -or $_.Category -match $query }
+    if (-not $results -or $results.Count -eq 0) { Write-Warn "No notes found matching '$query'."; Pause-Menu; return }
+    foreach ($r in $results) {
+        Write-Host ""; Write-Host "  [$($r.Category)] $($r.Title)" -ForegroundColor Yellow
+        Write-Host "  $($r.Content.Substring(0, [Math]::Min(200, $r.Content.Length)))..."
+    }
+    Pause-Menu
+}
+
+function Add-ProjectNote {
+    Show-Header; Initialize-MemoryLayer
+    $projects = Get-Content "$MemoryPath\projects.json" -Raw | ConvertFrom-Json
+    if (-not $projects -or $projects.Count -eq 0) { Write-Warn "No projects yet."; Pause-Menu; return }
+    for ($i = 0; $i -lt $projects.Count; $i++) { Write-Host "$($i+1). $($projects[$i].Name)" }
+    $sel = [int](Read-Host "Select project") - 1
+    if ($sel -lt 0 -or $sel -ge $projects.Count) { Pause-Menu; return }
+    $note = Read-Host "Note"
+    $projects[$sel].Notes += @{ Text = $note; Date = (Get-Date -Format "yyyy-MM-dd HH:mm") }
+    $projects[$sel].Updated = (Get-Date -Format "yyyy-MM-dd HH:mm")
+    $projects | ConvertTo-Json -Depth 10 | Set-Content "$MemoryPath\projects.json" -Encoding UTF8
+    Write-OK "Note added to '$($projects[$sel].Name)'."; Pause-Menu
+}
+
+function Show-MemoryMenu {
+    Show-Header; Write-Info "AI Memory Layer"; Write-Info "---------------"
+    Write-Host "1. New Project Profile"; Write-Host "2. List Projects"
+    Write-Host "3. Add Note to Project"; Write-Host "4. Save Knowledge Note"
+    Write-Host "5. Search Knowledge"; Write-Host "6. Back"
+}
+
+function Memory-Menu {
+    do {
+        Show-MemoryMenu
+        $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { New-ProjectProfile } "2" { List-ProjectProfiles } "3" { Add-ProjectNote }
+            "4" { Save-KnowledgeNote } "5" { Search-KnowledgeNotes } "6" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "6")
+}
+
+# -------------------------------------------------------
+# Local RAG / Knowledge Base
+# -------------------------------------------------------
+function Get-OllamaEmbedding {
+    param([string]$Text, [string]$Model = "nomic-embed-text")
+    try {
+        $body = @{ model = $Model; prompt = $Text } | ConvertTo-Json
+        $response = Invoke-RestMethod -Uri "http://localhost:11434/api/embeddings" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 30
+        return $response.embedding
+    } catch { return $null }
+}
+
+function Get-CosineSimilarity {
+    param([float[]]$A, [float[]]$B)
+    if ($A.Count -ne $B.Count) { return 0 }
+    $dot = 0.0; $magA = 0.0; $magB = 0.0
+    for ($i = 0; $i -lt $A.Count; $i++) { $dot += $A[$i]*$B[$i]; $magA += $A[$i]*$A[$i]; $magB += $B[$i]*$B[$i] }
+    $mag = [Math]::Sqrt($magA) * [Math]::Sqrt($magB)
+    if ($mag -eq 0) { return 0 }
+    return $dot / $mag
+}
+
+function Chunk-TextContent {
+    param([string]$Text, [int]$ChunkSize = 500, [int]$Overlap = 50)
+    $words = $Text -split '\s+'; $chunks = @(); $i = 0
+    while ($i -lt $words.Count) {
+        $end = [Math]::Min($i + $ChunkSize, $words.Count)
+        $chunks += ($words[$i..($end-1)] -join " "); $i += $ChunkSize - $Overlap
+    }
+    return $chunks
+}
+
+function Ingest-FileToRAG {
+    Show-Header; Initialize-MemoryLayer
+    $filePath = Read-Host "File path (TXT, MD, PS1, CSV, LOG, JSON, YAML)"
+    if (-not (Test-Path $filePath)) { Write-Err "File not found."; Pause-Menu; return }
+    $ext = [System.IO.Path]::GetExtension($filePath).ToLower()
+    $content = ""
+    switch ($ext) {
+        { $_ -in ".txt",".md",".ps1",".csv",".log",".json",".yaml",".yml",".conf",".ini" } {
+            $content = Get-Content $filePath -Raw -Encoding UTF8 }
+        default {
+            try { $content = Get-Content $filePath -Raw }
+            catch { Write-Err "Cannot read file."; Pause-Menu; return }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($content)) { Write-Err "File is empty."; Pause-Menu; return }
+    $fileName = [System.IO.Path]::GetFileName($filePath)
+    $chunks   = Chunk-TextContent -Text $content
+    Write-Info "Chunking '$fileName' into $($chunks.Count) chunks..."
+    $indexFile = "$RAGPath\index.json"
+    $index = if (Test-Path $indexFile) { Get-Content $indexFile -Raw | ConvertFrom-Json } else { @() }
+    $hasEmbed = (ollama list 2>&1) -match "nomic-embed"
+    $embedded = 0
+    foreach ($chunk in $chunks) {
+        $entry = @{ Id=[guid]::NewGuid().ToString(); Source=$fileName; FilePath=$filePath; Text=$chunk; Ingested=(Get-Date -Format "yyyy-MM-dd HH:mm"); Embedding=$null }
+        if ($hasEmbed) { $emb = Get-OllamaEmbedding -Text $chunk; if ($emb) { $entry.Embedding = $emb; $embedded++ } }
+        $index += $entry; Write-Host "." -NoNewline
+    }
+    Write-Host ""
+    $index | ConvertTo-Json -Depth 10 | Set-Content $indexFile -Encoding UTF8
+    Write-OK "Ingested '$fileName': $($chunks.Count) chunks ($embedded with embeddings)."
+    if (-not $hasEmbed) { Write-Warn "Run 'ollama pull nomic-embed-text' for semantic search." }
+    Pause-Menu
+}
+
+function Search-RAGKnowledge {
+    Show-Header; Initialize-MemoryLayer
+    $indexFile = "$RAGPath\index.json"
+    if (-not (Test-Path $indexFile)) { Write-Warn "No documents ingested yet. Use option 1 first."; Pause-Menu; return }
+    $index = Get-Content $indexFile -Raw | ConvertFrom-Json
+    if ($index.Count -eq 0) { Write-Warn "RAG index is empty."; Pause-Menu; return }
+    $query = Read-Host "Ask a question or enter search terms"
+    $hasEmbed = (ollama list 2>&1) -match "nomic-embed"
+    $results = @()
+    if ($hasEmbed) {
+        Write-Info "Running semantic search..."
+        $queryEmb = Get-OllamaEmbedding -Text $query
+        if ($queryEmb) {
+            foreach ($entry in $index) {
+                if ($entry.Embedding) {
+                    $sim = Get-CosineSimilarity -A $queryEmb -B $entry.Embedding
+                    $results += @{ Entry = $entry; Score = $sim }
+                }
+            }
+            $results = $results | Sort-Object { $_.Score } -Descending | Select-Object -First 5
+        }
+    }
+    if ($results.Count -eq 0) {
+        Write-Info "Falling back to keyword search..."
+        $results = $index | Where-Object { $_.Text -match $query } | Select-Object -First 5 | ForEach-Object { @{ Entry = $_; Score = 0 } }
+    }
+    if ($results.Count -eq 0) { Write-Warn "No results found."; Pause-Menu; return }
+    Write-Info "Top results:"; $context = ""
+    foreach ($r in $results) {
+        Write-Host ""; Write-Host "  [Source: $($r.Entry.Source)] Score: $([Math]::Round($r.Score, 3))" -ForegroundColor Yellow
+        Write-Host "  $($r.Entry.Text.Substring(0, [Math]::Min(200, $r.Entry.Text.Length)))..."
+        $context += $r.Entry.Text + "`n---`n"
+    }
+    $askAI = Read-Host "Send to AI for synthesis? (Y/N)"
+    if ($askAI -match "^[Yy]") {
+        $agent = if ($CHAMPModes[$Global:CHAMPMode]) { $CHAMPModes[$Global:CHAMPMode].DefaultAgent } else { "Professor-X" }
+        $model = $Agents[$agent].Model
+        $prompt = "Based on the following context, answer this question: $query`n`nContext:`n$context"
+        $body = @{ model = $model; prompt = $prompt; stream = $false } | ConvertTo-Json
+        try {
+            $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+            Write-Host ""; Write-Host $resp.response -ForegroundColor Cyan
+            Speak-CHAMP "RAG query complete."
+        } catch { Write-Err "AI query failed: $_" }
+    }
+    Pause-Menu
+}
+
+function List-RAGDocuments {
+    Show-Header; Initialize-MemoryLayer
+    $indexFile = "$RAGPath\index.json"
+    if (-not (Test-Path $indexFile)) { Write-Warn "No documents ingested yet."; Pause-Menu; return }
+    $index = Get-Content $indexFile -Raw | ConvertFrom-Json
+    $sources = $index | Group-Object Source
+    Write-Info "Ingested Documents"; Write-Info "------------------"
+    foreach ($s in $sources) { Write-Host "  $($s.Name) - $($s.Count) chunks" -ForegroundColor Yellow }
+    Write-Host ""; Write-Host "Total chunks: $($index.Count)"
+    Pause-Menu
+}
+
+function Remove-RAGDocument {
+    Show-Header; Initialize-MemoryLayer
+    $indexFile = "$RAGPath\index.json"
+    if (-not (Test-Path $indexFile)) { Write-Warn "No documents ingested yet."; Pause-Menu; return }
+    $index   = Get-Content $indexFile -Raw | ConvertFrom-Json
+    $sources = ($index | Group-Object Source).Name
+    for ($i = 0; $i -lt $sources.Count; $i++) { Write-Host "$($i+1). $($sources[$i])" }
+    $sel = [int](Read-Host "Select document to remove") - 1
+    if ($sel -lt 0 -or $sel -ge $sources.Count) { Pause-Menu; return }
+    $sourceName = $sources[$sel]
+    $newIndex = $index | Where-Object { $_.Source -ne $sourceName }
+    $newIndex | ConvertTo-Json -Depth 10 | Set-Content $indexFile -Encoding UTF8
+    Write-OK "Removed '$sourceName' from RAG index."; Pause-Menu
+}
+
+function Show-RAGMenu {
+    Show-Header; Write-Info "Local RAG / Knowledge Base"; Write-Info "--------------------------"
+    Write-Host "1. Ingest Document"; Write-Host "2. Search / Ask Knowledge Base"
+    Write-Host "3. List Ingested Documents"; Write-Host "4. Remove Document"; Write-Host "5. Back"
+}
+
+function RAG-Menu {
+    do {
+        Show-RAGMenu; $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { Ingest-FileToRAG } "2" { Search-RAGKnowledge } "3" { List-RAGDocuments }
+            "4" { Remove-RAGDocument } "5" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "5")
+}
+
+# -------------------------------------------------------
+# AI API Gateway
+# -------------------------------------------------------
+function Start-AIAPIGateway {
+    Show-Header
+    if ($Global:APIGatewayJob -and $Global:APIGatewayJob.State -eq "Running") {
+        Write-Warn "API Gateway already running on port $APIGatewayPort."; Pause-Menu; return
+    }
+    Write-Info "Starting CHAMP AI API Gateway on http://localhost:$APIGatewayPort/api/..."
+    $port = $APIGatewayPort
+    $Global:APIGatewayJob = Start-Job -ScriptBlock {
+        param($port)
+        $listener = New-Object System.Net.HttpListener
+        $listener.Prefixes.Add("http://localhost:$port/api/")
+        $listener.Start()
+        while ($listener.IsListening) {
+            try {
+                $ctx = $listener.GetContext()
+                $req = $ctx.Request; $res = $ctx.Response
+                $res.ContentType = "application/json"
+                $res.Headers.Add("Access-Control-Allow-Origin","*")
+                $path = $req.Url.AbsolutePath
+                $body = ""
+                if ($req.HasEntityBody) {
+                    $reader = New-Object System.IO.StreamReader($req.InputStream)
+                    $body = $reader.ReadToEnd(); $reader.Close()
+                }
+                $responseObj = switch -Regex ($path) {
+                    "/api/status" { @{ status="online"; version="1.0"; timestamp=(Get-Date -Format "o") } }
+                    "/api/agents" { @{ agents=@("Professor-X","Forge","Cyclops","Beast","Storm","Psylocke","Wolverine","Magneto","Havok","Bishop","Sage","Cypher","Moira","Cannonball","Scout","Gambit","Cable","Sunfire","Banshee","Iceman","Shadowcat","Rogue","Longshot","Dazzler","Jubilee","Nightcrawler") } }
+                    "/api/models" { $models=(ollama list 2>&1 | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] }); @{ models=$models } }
+                    "/api/chat"   {
+                        try {
+                            $reqObj = $body | ConvertFrom-Json
+                            $ob = @{ model=$reqObj.model; prompt=$reqObj.prompt; stream=$false } | ConvertTo-Json
+                            $or = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $ob -ContentType "application/json" -TimeoutSec 120
+                            @{ response=$or.response; model=$reqObj.model }
+                        } catch { @{ error=$_.ToString() } }
+                    }
+                    default { @{ error="Unknown endpoint. Available: /api/status /api/agents /api/models /api/chat" } }
+                }
+                $json  = $responseObj | ConvertTo-Json -Depth 5
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+                $res.ContentLength64 = $bytes.Length
+                $res.OutputStream.Write($bytes,0,$bytes.Length)
+                $res.OutputStream.Close()
+            } catch { Start-Sleep -Milliseconds 100 }
+        }
+    } -ArgumentList $port
+    Start-Sleep -Seconds 1
+    if ($Global:APIGatewayJob.State -eq "Running") {
+        Write-OK "API Gateway running at http://localhost:$APIGatewayPort/api/"
+        Write-Info "Endpoints: /api/status  /api/agents  /api/models  /api/chat"
+    } else { Write-Err "Failed to start API Gateway." }
+    Pause-Menu
+}
+
+function Stop-AIAPIGateway {
+    Show-Header
+    if ($Global:APIGatewayJob) {
+        Stop-Job $Global:APIGatewayJob -ErrorAction SilentlyContinue
+        Remove-Job $Global:APIGatewayJob -ErrorAction SilentlyContinue
+        $Global:APIGatewayJob = $null; Write-OK "API Gateway stopped."
+    } else { Write-Warn "API Gateway is not running." }
+    Pause-Menu
+}
+
+function Test-AIAPIGateway {
+    Show-Header; Write-Info "Testing CHAMP AI API Gateway..."
+    try {
+        $status = Invoke-RestMethod -Uri "http://localhost:$APIGatewayPort/api/status" -TimeoutSec 5
+        Write-OK "Gateway online: $($status | ConvertTo-Json)"
+    } catch { Write-Err "Gateway not responding. Start it first (option 1)." }
+    Pause-Menu
+}
+
+function Show-APIGatewayMenu {
+    Show-Header
+    $status = if ($Global:APIGatewayJob -and $Global:APIGatewayJob.State -eq "Running") { "RUNNING :$APIGatewayPort" } else { "STOPPED" }
+    Write-Info "AI API Gateway  [$status]"; Write-Info "----------------------------"
+    Write-Host "1. Start Gateway"; Write-Host "2. Stop Gateway"; Write-Host "3. Test Gateway"; Write-Host "4. Back"
+}
+
+function APIGateway-Menu {
+    do {
+        Show-APIGatewayMenu; $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { Start-AIAPIGateway } "2" { Stop-AIAPIGateway } "3" { Test-AIAPIGateway } "4" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "4")
+}
+
+# -------------------------------------------------------
+# Autonomous Agents
+# -------------------------------------------------------
+function Invoke-AutonomousAgent {
+    param([string]$AgentName, [string]$Goal, [string]$Model, [string[]]$Steps)
+    Show-Header; Write-Info "Autonomous Agent: $AgentName"; Write-Info "Goal: $Goal"; Write-Host ""
+    $results = @()
+    foreach ($step in $Steps) {
+        Write-Host "Step: $step" -ForegroundColor Cyan
+        $prompt = "$($AgentSystemPrompts[$AgentName])`n`nGoal: $Goal`n`nCurrent step: $step`n`nProvide a detailed actionable response."
+        $body = @{ model=$Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+        try {
+            $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 180
+            Write-Host $resp.response -ForegroundColor White
+            $results += @{ Step=$step; Output=$resp.response }
+            Write-Host "---" -ForegroundColor DarkGray
+        } catch { Write-Warn "Step failed: $_"; $results += @{ Step=$step; Output="ERROR: $_" } }
+    }
+    $sessDir = "$PSScriptRoot\CHAMP-Sessions"
+    if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory -Path $sessDir | Out-Null }
+    $outFile = "$sessDir\AutoAgent-$AgentName-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+    $md = "# Autonomous Agent: $AgentName`n`n**Goal:** $Goal`n`n**Date:** $(Get-Date)`n`n"
+    foreach ($r in $results) { $md += "## $($r.Step)`n`n$($r.Output)`n`n---`n`n" }
+    Set-Content $outFile -Value $md -Encoding UTF8
+    Write-OK "Results saved to $outFile"
+    Speak-CHAMP "Autonomous agent $AgentName has completed the task."
+    Pause-Menu
+}
+
+function Run-DevOpsAgent {
+    $goal = Read-Host "DevOps goal"
+    Invoke-AutonomousAgent -AgentName "Forge" -Goal $goal -Model $Agents["Forge"].Model -Steps @(
+        "Analyze the infrastructure requirements for: $goal",
+        "Identify potential risks and blockers",
+        "Create a step-by-step implementation plan",
+        "Generate required configuration files or scripts",
+        "Define success criteria and testing approach"
+    )
+}
+
+function Run-ThreatHunterAgent {
+    $target = Read-Host "Threat hunting target (IP, domain, hash, or threat description)"
+    Invoke-AutonomousAgent -AgentName "Cyclops" -Goal "Threat hunt: $target" -Model $Agents["Cyclops"].Model -Steps @(
+        "Profile the threat: $target -- classify type, severity, and known TTPs",
+        "Map to MITRE ATT&CK framework -- identify relevant tactics and techniques",
+        "Define indicators of compromise (IOCs) to hunt for",
+        "Create detection rules in Sigma/KQL/SPL format",
+        "Recommend containment and remediation actions"
+    )
+}
+
+function Run-DocumentationAgent {
+    $subject = Read-Host "What to document"
+    Invoke-AutonomousAgent -AgentName "Professor-X" -Goal "Create documentation for: $subject" -Model $Agents["Professor-X"].Model -Steps @(
+        "Create an executive summary for: $subject",
+        "Write a technical overview with architecture details",
+        "Document all components, interfaces, and dependencies",
+        "Write installation and configuration instructions",
+        "Add troubleshooting guide and FAQ"
+    )
+}
+
+function Run-ResearchAgent {
+    $topic = Read-Host "Research topic"
+    Invoke-AutonomousAgent -AgentName "Beast" -Goal "Research: $topic" -Model $Agents["Beast"].Model -Steps @(
+        "Provide a comprehensive overview of: $topic",
+        "Analyze current state-of-the-art and key developments",
+        "Identify key challenges, open problems, and opportunities",
+        "Compare top approaches, tools, or frameworks in this space",
+        "Synthesize findings into actionable recommendations"
+    )
+}
+
+function Run-InfrastructureAgent {
+    $goal = Read-Host "Infrastructure goal"
+    Invoke-AutonomousAgent -AgentName "Cannonball" -Goal $goal -Model $Agents["Cannonball"].Model -Steps @(
+        "Assess requirements and constraints for: $goal",
+        "Design the infrastructure architecture",
+        "Specify hardware, software, and network requirements",
+        "Create Terraform or Ansible automation scripts",
+        "Define monitoring, alerting, and maintenance plan"
+    )
+}
+
+function Run-GrantWriterAgent {
+    $grant = Read-Host "Grant name and funding opportunity"
+    Invoke-AutonomousAgent -AgentName "Professor-X" -Goal "Write grant proposal for: $grant" -Model $Agents["Professor-X"].Model -Steps @(
+        "Write an executive summary and project abstract for: $grant",
+        "Define the problem statement and significance",
+        "Describe the proposed solution, methodology, and innovation",
+        "Outline the project timeline, milestones, and deliverables",
+        "Write the budget justification and evaluation plan"
+    )
+}
+
+function Show-AutonomousAgentsMenu {
+    Show-Header; Write-Info "Autonomous Agents"; Write-Info "-----------------"
+    Write-Host "1. DevOps Agent      (Forge)"
+    Write-Host "2. Threat Hunter     (Cyclops)"
+    Write-Host "3. Documentation     (Professor-X)"
+    Write-Host "4. Research Agent    (Beast)"
+    Write-Host "5. Infrastructure    (Cannonball)"
+    Write-Host "6. Grant Writer      (Professor-X)"
+    Write-Host "7. Back"
+}
+
+function AutonomousAgents-Menu {
+    do {
+        Show-AutonomousAgentsMenu; $choice = Read-Host "Select agent"
+        switch ($choice) {
+            "1" { Run-DevOpsAgent } "2" { Run-ThreatHunterAgent } "3" { Run-DocumentationAgent }
+            "4" { Run-ResearchAgent } "5" { Run-InfrastructureAgent } "6" { Run-GrantWriterAgent }
+            "7" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "7")
+}
+
+# -------------------------------------------------------
+# Enhanced Auto Multi-Model Routing
+# -------------------------------------------------------
+function AutoRoute-Task {
+    Show-Header; Write-Info "Auto Multi-Model Router"; Write-Info "-----------------------"
+    $task = Read-Host "Describe your task"
+    Write-Info "Analyzing task and selecting best agent..."
+    $classifyPrompt = @"
+You are a task router. Analyze the following task and respond with ONLY the agent name that best matches from this list:
+Forge (coding/scripts/DevOps), Cyclops (cybersecurity/threats/logs), Beast (scientific reasoning/research),
+Storm (creative writing/long-form), Psylocke (multilingual/structured output), Sage (math/STEM),
+Cypher (SQL/databases), Moira (medical/health), Professor-X (strategy/planning/general),
+Havok (casual conversation), Bishop (balanced all-purpose), Iceman (pure code/80+ languages),
+Shadowcat (advanced code), Gambit (long context), Banshee (precision tasks)
+
+Task: $task
+
+Respond with ONLY the agent name, nothing else.
+"@
+    $body = @{ model=$Agents["Professor-X"].Model; prompt=$classifyPrompt; stream=$false } | ConvertTo-Json
+    try {
+        $resp   = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 60
+        $routed = $resp.response.Trim()
+        if (-not $Agents.ContainsKey($routed)) { $routed = "Professor-X" }
+        Write-OK "Routing to: $routed ($($Agents[$routed].Model))"
+        Write-Host "Role: $($Agents[$routed].Role)" -ForegroundColor DarkCyan
+        Speak-CHAMP "Routing your task to $routed."
+        $taskPrompt = "$($AgentSystemPrompts[$routed])`n`nTask: $task"
+        $taskBody   = @{ model=$Agents[$routed].Model; prompt=$taskPrompt; stream=$false } | ConvertTo-Json
+        $taskResp   = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $taskBody -ContentType "application/json" -TimeoutSec 180
+        Write-Host ""; Write-Host $taskResp.response -ForegroundColor Cyan
+        Speak-CHAMP "$routed has completed the task."
+    } catch { Write-Err "Auto-routing failed: $_" }
+    Pause-Menu
+}
+
+# -------------------------------------------------------
+# Cybersecurity Toolkit
+# -------------------------------------------------------
+function Get-EnvKey {
+    param([string]$KeyName)
+    $envFile = "$PSScriptRoot\.env"
+    if (Test-Path $envFile) {
+        $line = Get-Content $envFile | Where-Object { $_ -match "^$KeyName=" }
+        if ($line) { return ($line -split "=",2)[1].Trim() }
+    }
+    return ""
+}
+
+function Lookup-VirusTotal {
+    Show-Header
+    $apiKey = Get-EnvKey "VIRUSTOTAL_API_KEY"
+    if (-not $apiKey) {
+        Write-Warn "No VIRUSTOTAL_API_KEY in .env (free key at virustotal.com)"
+        $apiKey = Read-Host "Enter VirusTotal API key (or Enter to skip)"
+        if (-not $apiKey) { Pause-Menu; return }
+    }
+    $ioc = Read-Host "Enter IP, domain, URL, or file hash"
+    $iocType = if ($ioc -match "^\d{1,3}(\.\d{1,3}){3}$") { "ip_addresses" }
+               elseif ($ioc -match "^[a-fA-F0-9]{32,64}$") { "files" }
+               elseif ($ioc -match "^https?://") { "urls" }
+               else { "domains" }
+    Write-Info "Looking up $ioc on VirusTotal..."
+    try {
+        $headers = @{ "x-apikey"=$apiKey }
+        $resp    = Invoke-RestMethod -Uri "https://www.virustotal.com/api/v3/$iocType/$ioc" -Headers $headers -TimeoutSec 30
+        $stats   = $resp.data.attributes.last_analysis_stats
+        Write-Host ""
+        $malColor = if ($stats.malicious -gt 0) { "Red" } else { "Green" }
+        Write-Host "  MALICIOUS  : $($stats.malicious)" -ForegroundColor $malColor
+        Write-Host "  Suspicious : $($stats.suspicious)" -ForegroundColor Yellow
+        Write-Host "  Harmless   : $($stats.harmless)"   -ForegroundColor Green
+        Write-Host "  Undetected : $($stats.undetected)"
+        if ($stats.malicious -gt 0) {
+            $analysis = "VirusTotal result for $ioc`: $($stats.malicious) malicious detections."
+            $prompt = "$($AgentSystemPrompts["Cyclops"])`n`nAnalyze this threat intelligence and provide recommendations:`n$analysis"
+            $body   = @{ model=$Agents["Cyclops"].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+            $aiResp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+            Write-Host ""; Write-Host "Cyclops Analysis:" -ForegroundColor Red; Write-Host $aiResp.response
+        }
+    } catch { Write-Err "VirusTotal lookup failed: $_" }
+    Pause-Menu
+}
+
+function Lookup-AbuseIPDB {
+    Show-Header
+    $apiKey = Get-EnvKey "ABUSEIPDB_API_KEY"
+    if (-not $apiKey) {
+        Write-Warn "No ABUSEIPDB_API_KEY in .env (free key at abuseipdb.com)"
+        $apiKey = Read-Host "Enter AbuseIPDB API key (or Enter to skip)"
+        if (-not $apiKey) { Pause-Menu; return }
+    }
+    $ip = Read-Host "Enter IP address to check"
+    Write-Info "Querying AbuseIPDB for $ip..."
+    try {
+        $headers = @{ "Key"=$apiKey; "Accept"="application/json" }
+        $resp    = Invoke-RestMethod -Uri "https://api.abuseipdb.com/api/v2/check?ipAddress=$ip&maxAgeInDays=90" -Headers $headers -TimeoutSec 30
+        $data    = $resp.data
+        $scoreColor = if ($data.abuseConfidenceScore -gt 50) { "Red" } elseif ($data.abuseConfidenceScore -gt 10) { "Yellow" } else { "Green" }
+        Write-Host ""
+        Write-Host "  IP          : $($data.ipAddress)"
+        Write-Host "  Abuse Score : $($data.abuseConfidenceScore)%" -ForegroundColor $scoreColor
+        Write-Host "  Reports     : $($data.totalReports)"
+        Write-Host "  Country     : $($data.countryCode)"
+        Write-Host "  ISP         : $($data.isp)"
+        Write-Host "  Tor         : $($data.isTor)"
+    } catch { Write-Err "AbuseIPDB lookup failed: $_" }
+    Pause-Menu
+}
+
+function Lookup-CVE {
+    Show-Header
+    $cve = Read-Host "Enter CVE ID (e.g. CVE-2024-1234)"
+    Write-Info "Querying NVD for $cve..."
+    try {
+        $resp = Invoke-RestMethod -Uri "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=$cve" -TimeoutSec 30
+        $vuln = $resp.vulnerabilities[0].cve
+        $desc = ($vuln.descriptions | Where-Object { $_.lang -eq "en" } | Select-Object -First 1).value
+        Write-Host ""; Write-Host "  CVE  : $($vuln.id)" -ForegroundColor Yellow
+        Write-Host "  Desc : $desc"
+        $cvss = $vuln.metrics.cvssMetricV31[0].cvssData
+        if ($cvss) {
+            $sevColor = switch ($cvss.baseSeverity) { "CRITICAL"{"Red"} "HIGH"{"DarkRed"} "MEDIUM"{"Yellow"} default{"Green"} }
+            Write-Host "  CVSS : $($cvss.baseScore) $($cvss.baseSeverity)" -ForegroundColor $sevColor
+            Write-Host "  Vec  : $($cvss.vectorString)"
+        }
+        $prompt = "$($AgentSystemPrompts["Cyclops"])`n`nAnalyze this vulnerability and provide mitigation recommendations:`n$cve - $desc"
+        $body   = @{ model=$Agents["Cyclops"].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+        $aiResp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+        Write-Host ""; Write-Host "Cyclops Mitigation Advice:" -ForegroundColor Cyan; Write-Host $aiResp.response
+    } catch { Write-Err "CVE lookup failed: $_" }
+    Pause-Menu
+}
+
+function Generate-YARARule {
+    Show-Header
+    $target = Read-Host "Describe the threat or malware for YARA rule generation"
+    Write-Info "Generating YARA rule with Cyclops..."
+    $prompt = "$($AgentSystemPrompts["Cyclops"])`n`nCreate a professional YARA rule for the following threat. Include metadata, strings, and condition sections. Output ONLY the YARA rule code:`n`n$target"
+    $body = @{ model=$Agents["Cyclops"].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+        Write-Host ""; Write-Host $resp.response -ForegroundColor Green
+        $save = Read-Host "Save YARA rule? (Y/N)"
+        if ($save -match "^[Yy]") {
+            $sessDir = "$PSScriptRoot\CHAMP-Sessions"
+            if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory -Path $sessDir | Out-Null }
+            $fname = "$sessDir\yara-$(Get-Date -Format 'yyyyMMdd-HHmmss').yar"
+            Set-Content $fname -Value $resp.response -Encoding UTF8; Write-OK "Saved to $fname"
+        }
+    } catch { Write-Err "YARA generation failed: $_" }
+    Pause-Menu
+}
+
+function Map-MITREAttack {
+    Show-Header
+    $behavior = Read-Host "Describe attacker behavior or threat to map to MITRE ATT&CK"
+    Write-Info "Mapping to MITRE ATT&CK with Cyclops..."
+    $prompt = "$($AgentSystemPrompts["Cyclops"])`n`nMap the following behavior to MITRE ATT&CK. List Tactic, Technique ID, Technique Name, and recommended detections for each:`n`n$behavior"
+    $body = @{ model=$Agents["Cyclops"].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+        Write-Host ""; Write-Host $resp.response -ForegroundColor Cyan
+    } catch { Write-Err "MITRE mapping failed: $_" }
+    Pause-Menu
+}
+
+function Generate-SigmaRule {
+    Show-Header
+    $threat = Read-Host "Describe the threat or attack pattern for Sigma rule generation"
+    Write-Info "Generating Sigma detection rule with Cyclops..."
+    $prompt = "$($AgentSystemPrompts["Cyclops"])`n`nCreate a Sigma detection rule for the following threat. Use proper Sigma YAML format with title, status, description, logsource, detection, and falsepositives. Output ONLY the Sigma rule:`n`n$threat"
+    $body = @{ model=$Agents["Cyclops"].Model; prompt=$prompt; stream=$false } | ConvertTo-Json
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+        Write-Host ""; Write-Host $resp.response -ForegroundColor Green
+        $save = Read-Host "Save Sigma rule? (Y/N)"
+        if ($save -match "^[Yy]") {
+            $sessDir = "$PSScriptRoot\CHAMP-Sessions"
+            if (-not (Test-Path $sessDir)) { New-Item -ItemType Directory -Path $sessDir | Out-Null }
+            $fname = "$sessDir\sigma-$(Get-Date -Format 'yyyyMMdd-HHmmss').yml"
+            Set-Content $fname -Value $resp.response -Encoding UTF8; Write-OK "Saved to $fname"
+        }
+    } catch { Write-Err "Sigma generation failed: $_" }
+    Pause-Menu
+}
+
+function Show-CyberMenu {
+    Show-Header; Write-Info "AI Cybersecurity Toolkit"; Write-Info "------------------------"
+    Write-Host "1. VirusTotal IOC Lookup"
+    Write-Host "2. AbuseIPDB IP Reputation"
+    Write-Host "3. CVE Lookup (NVD)"
+    Write-Host "4. Generate YARA Rule"
+    Write-Host "5. MITRE ATT&CK Mapping"
+    Write-Host "6. Generate Sigma Rule"
+    Write-Host "7. Back"
+}
+
+function Cyber-Menu {
+    do {
+        Show-CyberMenu; $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { Lookup-VirusTotal } "2" { Lookup-AbuseIPDB } "3" { Lookup-CVE }
+            "4" { Generate-YARARule } "5" { Map-MITREAttack } "6" { Generate-SigmaRule }
+            "7" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "7")
+}
+
+# -------------------------------------------------------
+# Observability Stack
+# -------------------------------------------------------
+function Deploy-ObservabilityStack {
+    Show-Header
+    if (-not (Test-DockerRunning)) { Write-Err "Docker is not running."; Pause-Menu; return }
+    Write-Info "Deploying Prometheus + Grafana + Loki..."
+    if (-not (Test-Path $ObsStackPath)) { New-Item -ItemType Directory -Path $ObsStackPath | Out-Null }
+    Set-Content "$ObsStackPath\prometheus.yml" -Encoding UTF8 -Value @"
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['host.docker.internal:11434']
+    metrics_path: '/metrics'
+"@
+    Set-Content "$ObsStackPath\docker-compose.yml" -Encoding UTF8 -Value @"
+version: '3.8'
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: champ-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:latest
+    container_name: champ-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=champ1969
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+  loki:
+    image: grafana/loki:latest
+    container_name: champ-loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+volumes:
+  prometheus_data:
+  grafana_data:
+"@
+    Push-Location $ObsStackPath
+    docker compose up -d 2>&1
+    Pop-Location
+    Write-OK "Observability stack deployed:"
+    Write-Info "  Prometheus : http://localhost:9091"
+    Write-Info "  Grafana    : http://localhost:3001  (admin / champ1969)"
+    Write-Info "  Loki       : http://localhost:3100"
+    Speak-CHAMP "Observability stack is online."
+    Pause-Menu
+}
+
+function Stop-ObservabilityStack {
+    Show-Header
+    if (-not (Test-Path "$ObsStackPath\docker-compose.yml")) { Write-Warn "Observability stack not deployed."; Pause-Menu; return }
+    Push-Location $ObsStackPath; docker compose down 2>&1; Pop-Location
+    Write-OK "Observability stack stopped."; Pause-Menu
+}
+
+function Show-ObservabilityMenu {
+    Show-Header; Write-Info "AI Infrastructure Observability"; Write-Info "-------------------------------"
+    Write-Host "1. Deploy Stack (Prometheus + Grafana + Loki)"
+    Write-Host "2. Stop Stack"
+    Write-Host "3. Open Grafana  http://localhost:3001  (admin / champ1969)"
+    Write-Host "4. Open Prometheus  http://localhost:9091"
+    Write-Host "5. Back"
+}
+
+function Observability-Menu {
+    do {
+        Show-ObservabilityMenu; $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { Deploy-ObservabilityStack }
+            "2" { Stop-ObservabilityStack }
+            "3" { Start-Process "http://localhost:3001"; Pause-Menu }
+            "4" { Start-Process "http://localhost:9091"; Pause-Menu }
+            "5" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "5")
+}
+
+# -------------------------------------------------------
+# AI Deployment Engine
+# -------------------------------------------------------
+function Invoke-DeploymentEngine {
+    Show-Header; Write-Info "AI Deployment Engine"; Write-Info "--------------------"
+    $appDesc = Read-Host "Describe the app to deploy (e.g. 'FastAPI IOC dashboard on port 8080')"
+    Write-Info "Forge is designing the deployment..."
+    $dockerPrompt = "$($AgentSystemPrompts["Forge"])`n`nGenerate a production-ready Dockerfile for: $appDesc`nOutput ONLY the Dockerfile content."
+    $body = @{ model=$Agents["Forge"].Model; prompt=$dockerPrompt; stream=$false } | ConvertTo-Json
+    $dockerfile = ""
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 120
+        $dockerfile = $resp.response; Write-Host "Dockerfile generated." -ForegroundColor Green
+    } catch { Write-Err "Dockerfile generation failed: $_"; Pause-Menu; return }
+    $composePrompt = "$($AgentSystemPrompts["Forge"])`n`nGenerate a docker-compose.yml for: $appDesc`nInclude health checks. Output ONLY the docker-compose.yml content."
+    $body2 = @{ model=$Agents["Forge"].Model; prompt=$composePrompt; stream=$false } | ConvertTo-Json
+    $composeContent = ""
+    try {
+        $resp2 = Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method POST -Body $body2 -ContentType "application/json" -TimeoutSec 120
+        $composeContent = $resp2.response; Write-Host "docker-compose.yml generated." -ForegroundColor Green
+    } catch { Write-Err "Compose generation failed: $_" }
+    $appName    = ($appDesc -split " ")[0].ToLower() -replace "[^a-z0-9]",""
+    $deployPath = "$PSScriptRoot\CHAMP-Deploy\$appName-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    New-Item -ItemType Directory -Path $deployPath -Force | Out-Null
+    Set-Content "$deployPath\Dockerfile"         -Value $dockerfile     -Encoding UTF8
+    if ($composeContent) { Set-Content "$deployPath\docker-compose.yml" -Value $composeContent -Encoding UTF8 }
+    Write-OK "Deployment files saved to $deployPath"
+    $deploy = Read-Host "Deploy now with docker compose? (Y/N)"
+    if ($deploy -match "^[Yy]") {
+        if (-not (Test-DockerRunning)) { Write-Err "Docker is not running."; Pause-Menu; return }
+        Push-Location $deployPath; docker compose up -d 2>&1; Pop-Location
+        Speak-CHAMP "Deployment complete. Your application is starting up."
+        Write-OK "Application deployed. Check 'docker ps' for status."
+    }
+    if ($appDesc -match "port\s+(\d+)") {
+        $port = $Matches[1]
+        $open = Read-Host "Open http://localhost:$port in browser? (Y/N)"
+        if ($open -match "^[Yy]") { Start-Process "http://localhost:$port" }
+    }
+    Pause-Menu
+}
+
+function Show-DeploymentMenu {
+    Show-Header; Write-Info "AI Deployment Engine"; Write-Info "--------------------"
+    Write-Host "1. Deploy Application (AI-generated Dockerfile + Compose)"
+    Write-Host "2. Back"
+}
+
+function Deployment-Menu {
+    do {
+        Show-DeploymentMenu; $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { Invoke-DeploymentEngine } "2" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "2")
+}
+
+# -------------------------------------------------------
+# Multi-Mode Personalities
+# -------------------------------------------------------
+function Switch-CHAMPMode {
+    Show-Header
+    Write-Info "CHAMP AI Mode Selector  [Current: $Global:CHAMPMode]"; Write-Host ""
+    $modes = $CHAMPModes.Keys | Sort-Object
+    for ($i = 0; $i -lt $modes.Count; $i++) {
+        $m = $modes[$i]; $marker = if ($m -eq $Global:CHAMPMode) { " <-- ACTIVE" } else { "" }
+        Write-Host "$($i+1). $m - $($CHAMPModes[$m].Description)$marker" -ForegroundColor $CHAMPModes[$m].Color
+    }
+    Write-Host "$($modes.Count+1). Back"
+    $sel = Read-Host "Select mode"
+    if ($sel -match "^\d+$") {
+        $idx = [int]$sel - 1
+        if ($idx -ge 0 -and $idx -lt $modes.Count) {
+            $Global:CHAMPMode = $modes[$idx]
+            Write-OK "Mode: $Global:CHAMPMode  |  Default agent: $($CHAMPModes[$Global:CHAMPMode].DefaultAgent)"
+            Speak-CHAMP "CHAMP AI is now in $Global:CHAMPMode mode."
+        }
+    }
+    Pause-Menu
+}
+
+# -------------------------------------------------------
+# Advanced AI Platform Menu
+# -------------------------------------------------------
+function Show-AdvancedMenu {
+    Show-Header
+    Write-Info "Advanced AI Platform  [Mode: $Global:CHAMPMode]"
+    Write-Info "-----------------------------------------------"
+    Write-Host "1. AI Memory Layer          (projects, notes, knowledge)" -ForegroundColor Cyan
+    Write-Host "2. Local RAG / Knowledge    (ingest docs, semantic search)" -ForegroundColor Cyan
+    Write-Host "3. AI API Gateway           (REST API for all agents)" -ForegroundColor Cyan
+    Write-Host "4. Autonomous Agents        (multi-step goal execution)" -ForegroundColor Yellow
+    Write-Host "5. Auto Multi-Model Router  (AI picks best agent)" -ForegroundColor Yellow
+    Write-Host "6. AI Deployment Engine     (describe app, deploy it)" -ForegroundColor Green
+    Write-Host "7. Mode Switcher            (Builder/Cyber/Research/Executive)" -ForegroundColor Magenta
+    Write-Host "8. Back"
+}
+
+function Advanced-Menu {
+    do {
+        Show-AdvancedMenu; $choice = Read-Host "Select"
+        switch ($choice) {
+            "1" { Memory-Menu } "2" { RAG-Menu } "3" { APIGateway-Menu }
+            "4" { AutonomousAgents-Menu } "5" { AutoRoute-Task }
+            "6" { Deployment-Menu } "7" { Switch-CHAMPMode } "8" { return }
+            default { Play-ErrorSound; Pause-Menu }
+        }
+    } while ($choice -ne "8")
+}
+
 # Main Menu
 # -----------------------------
 function Show-MainMenu {
@@ -6228,6 +7138,9 @@ function Show-MainMenu {
     Write-Host "21. Intelligence Hub" -ForegroundColor Yellow
     Write-Host "22. CEREBRO Chat / Voice Conversation" -ForegroundColor Green
     Write-Host "23. Exit"
+    Write-Host "24. Advanced AI Platform    (Memory, RAG, API, Agents, Deploy)" -ForegroundColor Cyan
+    Write-Host "25. Cybersecurity Toolkit   (VirusTotal, CVE, YARA, MITRE, Sigma)" -ForegroundColor Red
+    Write-Host "26. Observability Stack     (Prometheus + Grafana + Loki)" -ForegroundColor Yellow
     Write-Host ""
     if ($EnableVoice)  { Write-OK   "Voice  : ON"  } else { Write-Warn "Voice  : OFF" }
     if ($EnableSounds) { Write-OK   "Sounds : ON"  } else { Write-Warn "Sounds : OFF" }
@@ -6272,6 +7185,9 @@ do {
         "21" { IntelHub-Menu }
         "22" { Chat-Menu }
         "23" { Speak-CHAMP "CEREBRO shutting down. Goodbye, Carnell. Until next time."; Write-ActivityLog "CHAMP AI Control Center exited"; Write-Host "Exiting..." }
+        "24" { Advanced-Menu }
+        "25" { Cyber-Menu }
+        "26" { Observability-Menu }
         default { Speak-CHAMP "Invalid selection."; Play-ErrorSound; Pause-Menu }
     }
 } while ($choice -ne "23")
